@@ -2,6 +2,13 @@
     "Entries": [
         {
             "FileName": "AI_Generated_Gemini_Code.cs",
+            "Timestamp": "2025-07-18 22:57:25",
+            "OriginalCode": "기존 코드가 있다면 여기에 넣습니다.",
+            "ModifiedCode": "안녕하세요!",
+            "ScriptPath": "Assets/AI_Generated_Scripts/Gemini/"
+        },
+        {
+            "FileName": "AI_Generated_Gemini_Code.cs",
             "Timestamp": "2025-07-18 22:45:01",
             "OriginalCode": "기존 코드가 있다면 여기에 넣습니다.",
             "ModifiedCode": "안녕하세요!",

@@ -1,5 +1,4 @@
-﻿// Editor/ChatGPTTabHandler.cs
-using UnityEditor;
+﻿using UnityEditor;
 using UnityEngine;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -8,7 +7,8 @@ using UnityEngine.Networking;
 using System.Text;
 using System.Threading.Tasks;
 using System.IO;
-using System.Linq; 
+using System.Linq;
+using System;
 
 [System.Serializable]
 public class ChatGPTTabHandler
@@ -27,13 +27,16 @@ public class ChatGPTTabHandler
     private string apiKeyFilePath;
     private string scriptFolderPath;
 
+    private GeminiChatGPTIntegrationEditor _parentWindow;
+
     public ChatGPTTabHandler()
     {
-        // 초기화 로직은 Initialize()로 이동합니다.
     }
 
     public void Initialize(EditorWindow parentWindow)
     {
+        _parentWindow = parentWindow as GeminiChatGPTIntegrationEditor;
+
         if (string.IsNullOrEmpty(scriptFolderPath))
         {
             string scriptPath = AssetDatabase.GetAssetPath(MonoScript.FromScriptableObject(parentWindow));
@@ -67,7 +70,7 @@ public class ChatGPTTabHandler
         }
 
         isApprovingApiKey = true;
-        EditorWindow.GetWindow<GeminiChatGPTIntegrationEditor>().Repaint();
+        _parentWindow.Repaint();
 
         string testUrl = "https://api.openai.com/v1/models";
         using (UnityWebRequest request = UnityWebRequest.Get(testUrl))
@@ -99,7 +102,7 @@ public class ChatGPTTabHandler
         }
         
         isApprovingApiKey = false;
-        EditorWindow.GetWindow<GeminiChatGPTIntegrationEditor>().Repaint();
+        _parentWindow.Repaint();
     }
 
 
@@ -153,8 +156,7 @@ public class ChatGPTTabHandler
         EditorGUILayout.EndVertical();
         EditorGUILayout.Space(10);
 
-        // '대화 내용' 섹션: 높이를 250으로 고정
-        EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.Height(250)); 
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandHeight(true));
         EditorGUILayout.LabelField("💬 대화 내용", EditorStyles.boldLabel);
         EditorGUILayout.Space(5);
 
@@ -166,25 +168,38 @@ public class ChatGPTTabHandler
         chatStyle.richText = true;
 
         StringBuilder fullChatContent = new StringBuilder();
-        foreach (MessageEntry entry in chatGPTMessages)
+
+        List<MessageEntry> messagesToDisplay = new List<MessageEntry>();
+        if (chatGPTMessages.Any())
+        {
+            DateTime lastMessageTime = chatGPTMessages.Last().Timestamp;
+            DateTime oneHourAgo = lastMessageTime.AddHours(-1);
+
+            messagesToDisplay = chatGPTMessages
+                .Where(entry => entry.Timestamp >= oneHourAgo)
+                .ToList();
+        }
+
+        foreach (MessageEntry entry in messagesToDisplay)
         {
             if (entry.Type == MessageEntry.MessageType.User)
             {
-                fullChatContent.AppendLine($"<color=white><b>나:</b> {entry.Content}</color>\n");
+                fullChatContent.AppendLine($"<color=white><b>나 ({entry.Timestamp:HH:mm:ss}):</b> {entry.Content}</color>\n");
             }
-            else // AI
+            else
             {
-                fullChatContent.AppendLine($"<color=#ADD8E6><b>ChatGPT:</b> {entry.Content}</color>\n"); // 연한 파랑색
+                fullChatContent.AppendLine($"<color=#ADD8E6><b>ChatGPT ({entry.Timestamp:HH:mm:ss}):</b> {entry.Content}</color>\n");
             }
         }
-        EditorGUILayout.SelectableLabel(fullChatContent.ToString(), chatStyle, GUILayout.ExpandWidth(true));
+
+        // ⭐ 이 줄에 GUILayout.ExpandHeight(true) 추가
+        EditorGUILayout.SelectableLabel(fullChatContent.ToString(), chatStyle, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
 
         EditorGUILayout.EndScrollView();
         EditorGUILayout.EndVertical();
         EditorGUILayout.Space(10);
 
-        // '질문하기' 섹션: 높이를 200으로 고정
-        EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.Height(200)); 
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.Height(200)); // 질문 섹션 고정 높이
         EditorGUILayout.LabelField("✏️ 질문하기", EditorStyles.boldLabel);
         EditorGUILayout.Space(5);
 
@@ -195,15 +210,30 @@ public class ChatGPTTabHandler
 
         GUI.enabled = isApiKeyApproved && !isSendingRequest;
 
-        chatGPTQuery = EditorGUILayout.TextArea(chatGPTQuery, GUILayout.ExpandHeight(true)); 
+        chatGPTQuery = EditorGUILayout.TextArea(chatGPTQuery, GUILayout.MinHeight(80)); // 최소 높이 설정
 
         EditorGUILayout.Space(5);
 
         if (GUILayout.Button(isSendingRequest ? "⏳ 전송 중..." : "⬆️ 전송", GUILayout.Height(35)))
         {
-            SendChatGPTQuery(chatGPTQuery);
-            chatGPTQuery = "";
-            showServiceSwapWarning = false;
+            if (!isApiKeyApproved)
+            {
+                EditorUtility.DisplayDialog("경고", "ChatGPT API 키가 승인되지 않았습니다. API 키를 입력하고 승인해주세요.", "확인");
+            }
+            else if (string.IsNullOrEmpty(chatGPTQuery.Trim()))
+            {
+                EditorUtility.DisplayDialog("경고", "질문 내용을 입력해주세요.", "확인");
+            }
+            else if (chatGPTAiVersion == "invalid-model")
+            {
+                 EditorUtility.DisplayDialog("경고", $"현재 선택된 모델 '{chatGPTAiVersion}'은(는) 유효하지 않습니다. 다른 모델을 선택해주세요.", "확인");
+            }
+            else
+            {
+                SendChatGPTQuery(chatGPTQuery);
+                chatGPTQuery = "";
+                showServiceSwapWarning = false;
+            }
         }
         GUI.enabled = true;
         
@@ -222,18 +252,18 @@ public class ChatGPTTabHandler
         EditorGUILayout.EndVertical();
     }
 
-    private async void SendChatGPTQuery(string query)
+    public async void SendChatGPTQuery(string query, bool isFromStatistics = false)
     {
         if (string.IsNullOrEmpty(query)) return;
         if (!isApiKeyApproved)
         {
-            EditorUtility.DisplayDialog("경고", "API 키를 먼저 승인해주세요.", "확인");
+            if (!isFromStatistics) EditorUtility.DisplayDialog("경고", "API 키를 먼저 승인해주세요.", "확인");
             return;
         }
 
         isSendingRequest = true;
         showServiceSwapWarning = false;
-        EditorWindow.GetWindow<GeminiChatGPTIntegrationEditor>().Repaint();
+        _parentWindow.Repaint();
 
         chatGPTMessages.Add(new MessageEntry(query, MessageEntry.MessageType.User));
         chatGPTMessages.Add(new MessageEntry("답변 생성 중...", MessageEntry.MessageType.AI));
@@ -312,26 +342,6 @@ public class ChatGPTTabHandler
                     {
                         responseText = chatGPTResponse.choices[0].message.content.Trim();
                         showServiceSwapWarning = false;
-
-                        string fileName = "AI_Generated_ChatGPT_Code.cs";
-                        string timestamp = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-                        string originalCode = "기존 코드가 있다면 여기에 넣습니다."; 
-                        string modifiedCode = responseText;
-                        string scriptPath = "Assets/AI_Generated_Scripts/ChatGPT/";
-
-                        GeminiChatGPTIntegrationEditor editorWindow = EditorWindow.GetWindow<GeminiChatGPTIntegrationEditor>();
-                        if (editorWindow != null)
-                        {
-                            CodeHistoryViewerTabHandler historyHandler = editorWindow.GetCodeHistoryViewerTabHandler();
-                            if (historyHandler != null)
-                            {
-                                historyHandler.RecordCodeChange(fileName, timestamp, originalCode, modifiedCode, scriptPath);
-                            }
-                            else
-                            {
-                                Debug.LogError("코드 히스토리 뷰어 핸들러를 찾을 수 없습니다. GeminiChatGPTIntegrationEditor의 OnEnable 메서드를 확인하세요.");
-                            }
-                        }
                     }
                     else if (chatGPTResponse != null && chatGPTResponse.error != null)
                     {
@@ -365,77 +375,100 @@ public class ChatGPTTabHandler
             if (chatGPTMessages.Count > 0 && chatGPTMessages[chatGPTMessages.Count - 1].Content == "답변 생성 중...")
             {
                 chatGPTMessages[chatGPTMessages.Count - 1].Content = responseText;
+                chatGPTMessages[chatGPTMessages.Count - 1].Timestamp = DateTime.Now;
             }
             else
             {
                 chatGPTMessages.Add(new MessageEntry(responseText, MessageEntry.MessageType.AI));
             }
 
-            // ⭐ 질문 리스트에 현재 질문과 답변, AI 타입 추가
-            GeminiChatGPTIntegrationEditor editorWindow = EditorWindow.GetWindow<GeminiChatGPTIntegrationEditor>();
+            GeminiChatGPTIntegrationEditor editorWindow = _parentWindow;
             if (editorWindow != null)
             {
                 QuestionListTabHandler questionListHandler = editorWindow.GetQuestionListTabHandler();
                 if (questionListHandler != null)
                 {
                     questionListHandler.AddQuestion(query, responseText, AiServiceType.ChatGPT);
+                    if (!isFromStatistics)
+                    {
+                         StatisticsTabHandler statsHandler = editorWindow.GetStatisticsTabHandler();
+                         if (statsHandler != null)
+                         {
+                             statsHandler.RecordKeyword(query);
+                         }
+                    }
                 }
             }
 
             isSendingRequest = false;
             chatGPTScrollPos.y = float.MaxValue;
-            EditorWindow.GetWindow<GeminiChatGPTIntegrationEditor>().Repaint();
+            _parentWindow.Repaint();
         }
     }
 
-    private string EscapeJsonString(string text)
+    private string EscapeJsonString(string rawString)
     {
-        return text.Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r");
+        if (string.IsNullOrEmpty(rawString))
+        {
+            return "";
+        }
+        return rawString.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
     }
 
     [System.Serializable]
-    public class OpenAIRequestPayload
+    private class OpenAIRequestPayload
     {
         public string model;
         public MessageEntryForChatGPT[] messages;
+        public float temperature = 0.7f;
     }
 
     [System.Serializable]
-    public class MessageEntryForChatGPT
+    private class MessageEntryForChatGPT
     {
         public string role;
         public string content;
     }
-
 
     [System.Serializable]
     private class ChatGPTResponse
     {
         public Choice[] choices;
-        public ErrorObject error;
+        public Error error;
     }
 
     [System.Serializable]
     private class Choice
     {
-        public Message message;
-        public string finish_reason;
-        public int index;
+        public MessageEntryForChatGPT message;
     }
 
     [System.Serializable]
-    private class Message
-    {
-        public string role;
-        public string content;
-    }
-
-    [System.Serializable]
-    private class ErrorObject
+    private class Error
     {
         public string message;
         public string type;
         public string param;
         public string code;
     }
+
+    [System.Serializable]
+    public class MessageEntry
+    {
+        public string Content;
+        public MessageType Type;
+        public DateTime Timestamp;
+
+        public enum MessageType { User, AI }
+
+        public MessageEntry(string content, MessageType type)
+        {
+            Content = content;
+            Type = type;
+            Timestamp = DateTime.Now;
+        }
+    }
+
+    public bool IsApiKeyApproved() => isApiKeyApproved;
+    public bool IsSendingRequest() => isSendingRequest;
 }
