@@ -10,7 +10,8 @@ using System.Text.RegularExpressions;
 
 public enum GeminiModel
 {
-    GeminiPro,
+    Gemini15Pro,
+    Gemini15Flash,
     GeminiProVision
 }
 
@@ -29,7 +30,7 @@ public class GeminiTabHandler
     private Texture2D _selectedImageTexture;
 
     private int _selectedGeminiModelIndex = 0;
-    private string[] _geminiModels = { "gemini-pro", "gemini-pro-vision" };
+    private string[] _geminiModels = { "gemini-1.5-pro", "gemini-1.5-flash", "gemini-pro-vision" };
 
     private const string GeminiApiKeyPrefKey = "GeminiApiKey";
     private const string SelectedGeminiModelPrefKey = "SelectedGeminiModel";
@@ -89,7 +90,7 @@ public class GeminiTabHandler
         EditorGUILayout.EndVertical();
         EditorGUILayout.Space(10);
 
-        // Height for the top fixed sections (API Key, Model Selection, etc.)
+        // Height for the top fixed sections
         float topFixedSectionHeight =
             (EditorGUIUtility.singleLineHeight * 2 + 10) + // API Key section
             (30 + 10) + // Buttons
@@ -106,7 +107,7 @@ public class GeminiTabHandler
             5 + // Space after preview
             10; // Additional padding
 
-        // Height of the "질Questions하기" section content
+        // Height of the "질문하기" section content
         float askQuestionSectionContentHeight =
             EditorGUIUtility.singleLineHeight + 5 + // "질문하기" label
             imageUIBlockHeight + // Image UI block
@@ -114,7 +115,7 @@ public class GeminiTabHandler
             40 + 10; // Buttons + space
 
         // Total bottom space, increased to prevent clipping
-        float totalGuaranteedBottomSpace = askQuestionSectionContentHeight + 80; // Increased padding
+        float totalGuaranteedBottomSpace = askQuestionSectionContentHeight + 80;
 
         float chatScrollViewHeight = editorWindowHeight - topFixedSectionHeight - totalGuaranteedBottomSpace;
 
@@ -156,12 +157,12 @@ public class GeminiTabHandler
 
         EditorGUILayout.EndScrollView();
         EditorGUILayout.EndVertical();
-        EditorGUILayout.Space(20); // Increased bottom margin
+        EditorGUILayout.Space(20);
 
         EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandWidth(true));
         EditorGUILayout.LabelField("질문하기", EditorStyles.boldLabel);
 
-        // Always show image UI for gemini-pro-vision
+        // Always show image UI, but enable functionality only for gemini-pro-vision
         bool isVisionModel = (_geminiModels[_selectedGeminiModelIndex] == "gemini-pro-vision");
         EditorGUILayout.BeginHorizontal();
         if (GUILayout.Button("이미지 파일 선택", GUILayout.Height(25), GUILayout.Width(150)))
@@ -227,7 +228,7 @@ public class GeminiTabHandler
         GUI.enabled = true;
         EditorGUILayout.EndHorizontal();
         EditorGUILayout.EndVertical();
-        EditorGUILayout.Space(20); // Additional bottom margin to prevent clipping
+        EditorGUILayout.Space(20);
     }
 
     private void UpdateApiStatus()
@@ -270,6 +271,7 @@ public class GeminiTabHandler
             return;
         }
 
+        // Add user message to history (except for statistics analysis)
         if (_parentWindow?.GetStatisticsTabHandler().IsAIAnalysisInProgress() == false)
         {
             _messages.Add(new MemoEntry(prompt, MemoEntry.MessageType.User));
@@ -288,6 +290,7 @@ public class GeminiTabHandler
                 GeminiRequest geminiRequest = new GeminiRequest();
                 geminiRequest.contents = new List<GeminiContent>();
 
+                // Add message history (text only, to avoid inline_data issues)
                 if (_parentWindow?.GetStatisticsTabHandler().IsAIAnalysisInProgress() == false)
                 {
                     foreach (var msg in _messages.Where(m => m.Type == MemoEntry.MessageType.User || m.Type == MemoEntry.MessageType.AI))
@@ -300,12 +303,14 @@ public class GeminiTabHandler
                     }
                 }
 
+                // Current message
                 List<GeminiPart> currentParts = new List<GeminiPart>();
                 if (!string.IsNullOrEmpty(prompt))
                 {
                     currentParts.Add(new GeminiPart { text = prompt });
                 }
 
+                // Add image data as a separate part for vision model
                 if (isVisionModel && _selectedImageTexture != null)
                 {
                     byte[] imageBytes = File.ReadAllBytes(_tempImagePath);

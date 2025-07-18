@@ -14,7 +14,7 @@ public class GeminiChatGPTIntegrationEditor : EditorWindow
 
     private Texture2D _bannerImage;
 
-    [MenuItem("Window/AI/Gemini & ChatGPT Integration")]
+    [MenuItem("Tools/Gemini & ChatGPT Integration")]
     public static void ShowWindow()
     {
         GetWindow<GeminiChatGPTIntegrationEditor>("AI 통합 도구");
@@ -69,7 +69,7 @@ public class GeminiChatGPTIntegrationEditor : EditorWindow
             float bannerWidth = position.width * 0.9f;
             float bannerHeight = bannerWidth / _bannerImage.width * _bannerImage.height;
             if (bannerHeight > 150) bannerHeight = 150; // 최대 높이 제한
-            if (bannerWidth > 800) bannerWidth = 800; // 최대 너비 제한
+            if (bannerWidth > 1000) bannerWidth = 1000; // 최대 너비 제한
 
             GUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace();
@@ -77,6 +77,8 @@ public class GeminiChatGPTIntegrationEditor : EditorWindow
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
             EditorGUILayout.Space(10);
+
+            GUILayout.MinHeight(800);
         }
 
         int newSelectedTab = GUILayout.Toolbar(_selectedTab, _tabNames);
