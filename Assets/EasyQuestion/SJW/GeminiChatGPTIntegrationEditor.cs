@@ -71,7 +71,6 @@ public class GeminiChatGPTIntegrationEditor : EditorWindow
     // CodeHistoryViewerTabHandler 인스턴스를 반환하는 메서드
     public CodeHistoryViewerTabHandler GetCodeHistoryViewerTabHandler()
     {
-        // OnEnable에서 이미 초기화하므로, null 체크만 수행
         if (_codeHistoryViewerTabHandler == null)
         {
             _codeHistoryViewerTabHandler = new CodeHistoryViewerTabHandler();
@@ -83,7 +82,6 @@ public class GeminiChatGPTIntegrationEditor : EditorWindow
     // QuestionListTabHandler 인스턴스를 반환하는 메서드
     public QuestionListTabHandler GetQuestionListTabHandler()
     {
-        // OnEnable에서 이미 초기화하므로, null 체크만 수행
         if (_questionListTabHandler == null)
         {
             _questionListTabHandler = new QuestionListTabHandler();
@@ -97,9 +95,9 @@ public class GeminiChatGPTIntegrationEditor : EditorWindow
         // 이미지 배너 표시 (텍스트 라벨 삭제)
         if (_bannerTexture != null)
         {
-            Rect bannerRect = new Rect(0, 0, position.width, 110); // 배너 높이 조정 가능
+            Rect bannerRect = new Rect(0, 0, position.width, 100); // 배너 높이 조정 가능
             GUI.DrawTexture(bannerRect, _bannerTexture, ScaleMode.ScaleToFit);
-            EditorGUILayout.Space(110); // 배너 높이에 맞춰 공간 확보
+            EditorGUILayout.Space(105); // 배너 높이에 맞춰 공간 확보
         }
         // 배너 이미지가 없는 경우, 공간을 비워둠 (아무것도 그리지 않음)
         else

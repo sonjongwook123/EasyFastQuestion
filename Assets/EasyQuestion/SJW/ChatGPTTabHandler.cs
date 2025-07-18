@@ -183,7 +183,7 @@ public class ChatGPTTabHandler
         EditorGUILayout.EndVertical();
         EditorGUILayout.Space(10);
 
-        // ⭐ '질문하기' 섹션: 높이를 200으로 고정
+        // '질문하기' 섹션: 높이를 200으로 고정
         EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.Height(200)); 
         EditorGUILayout.LabelField("✏️ 질문하기", EditorStyles.boldLabel);
         EditorGUILayout.Space(5);
@@ -238,17 +238,6 @@ public class ChatGPTTabHandler
         chatGPTMessages.Add(new MessageEntry(query, MessageEntry.MessageType.User));
         chatGPTMessages.Add(new MessageEntry("답변 생성 중...", MessageEntry.MessageType.AI));
         
-        // ⭐ 질문 리스트에 현재 질문 추가
-        GeminiChatGPTIntegrationEditor editorWindow = EditorWindow.GetWindow<GeminiChatGPTIntegrationEditor>();
-        if (editorWindow != null)
-        {
-            QuestionListTabHandler questionListHandler = editorWindow.GetQuestionListTabHandler();
-            if (questionListHandler != null)
-            {
-                questionListHandler.AddQuestion(query);
-            }
-        }
-
         chatGPTScrollPos.y = float.MaxValue;
 
         string responseText = "오류: 응답을 받지 못했습니다.";
@@ -330,7 +319,7 @@ public class ChatGPTTabHandler
                         string modifiedCode = responseText;
                         string scriptPath = "Assets/AI_Generated_Scripts/ChatGPT/";
 
-                        // ⭐ 코드 히스토리 저장
+                        GeminiChatGPTIntegrationEditor editorWindow = EditorWindow.GetWindow<GeminiChatGPTIntegrationEditor>();
                         if (editorWindow != null)
                         {
                             CodeHistoryViewerTabHandler historyHandler = editorWindow.GetCodeHistoryViewerTabHandler();
@@ -380,6 +369,17 @@ public class ChatGPTTabHandler
             else
             {
                 chatGPTMessages.Add(new MessageEntry(responseText, MessageEntry.MessageType.AI));
+            }
+
+            // ⭐ 질문 리스트에 현재 질문과 답변, AI 타입 추가
+            GeminiChatGPTIntegrationEditor editorWindow = EditorWindow.GetWindow<GeminiChatGPTIntegrationEditor>();
+            if (editorWindow != null)
+            {
+                QuestionListTabHandler questionListHandler = editorWindow.GetQuestionListTabHandler();
+                if (questionListHandler != null)
+                {
+                    questionListHandler.AddQuestion(query, responseText, AiServiceType.ChatGPT);
+                }
             }
 
             isSendingRequest = false;
