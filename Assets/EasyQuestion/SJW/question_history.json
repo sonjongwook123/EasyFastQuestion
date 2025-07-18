@@ -1,0 +1,42 @@
+{
+    "Questions": [
+        {
+            "Question": "ㅈㅁㄴ",
+            "Answer": "That's Korean.  Without more context, it's impossible to know what it means.  It could be an abbreviation, initials, or a part of a word.  Do you have any more information?\n",
+            "ServiceType": 0,
+            "Memos": [],
+            "IsImportant": false
+        },
+        {
+            "Question": "ㄴㅁㅁㄴㄴ",
+            "Answer": "That's a sequence of Korean consonants.  Without more context, it's impossible to know what it means.  It could be:\n\n* **Part of a word:**  Korean words are often a combination of consonants and vowels.  This is only consonants, so it's incomplete.\n* **An abbreviation:**  It might be a shortened form of something.\n* **A random sequence:** It could simply be a random collection of letters.\n* **A code:**  It could be part of a secret code or cipher.\n\nTo understand the meaning, I need more information.\n",
+            "ServiceType": 0,
+            "Memos": [
+                {
+                    "Content": "ㅈㅈㅁㅇㅈㅇㅈㅇㅈ",
+                    "Type": 5
+                },
+                {
+                    "Content": "ㄴㅁㅁㄴㅁ",
+                    "Type": 5
+                },
+                {
+                    "Content": "ㄴㅁㄴㅁ",
+                    "Type": 5
+                },
+                {
+                    "Content": "ㅁㄴㅇ",
+                    "Type": 5
+                }
+            ],
+            "IsImportant": false
+        },
+        {
+            "Question": "ㄴㅋㅊㅊ",
+            "Answer": "That looks like a Korean text abbreviation.  Without more context, it's impossible to say for sure what it means.  It's likely slang or an abbreviation used in online chats.  To understand its meaning, I need more information.\n",
+            "ServiceType": 0,
+            "Memos": [],
+            "IsImportant": false
+        }
+    ]
+}

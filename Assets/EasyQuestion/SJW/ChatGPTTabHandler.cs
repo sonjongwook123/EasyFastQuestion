@@ -1,12 +1,11 @@
 ﻿using UnityEditor;
 using UnityEngine;
-using System.Collections.Generic;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
+using System.Collections.Generic;
 using System.Linq;
 using System;
-using System.IO;
 
 [System.Serializable]
 public class ChatGPTTabHandler
@@ -16,6 +15,7 @@ public class ChatGPTTabHandler
     private string _inputPrompt = "";
     private Vector2 _scrollPos;
     private List<MemoEntry> _messages = new List<MemoEntry>();
+    private string _chatDisplayText = "";
     private bool _isSendingRequest = false;
     private string _apiStatus = "API 키를 입력하고 '승인'을 눌러주세요.";
     private int _selectedModelIndex = 0;
@@ -24,8 +24,7 @@ public class ChatGPTTabHandler
         "gpt-4o",
         "gpt-4-turbo",
     };
-    private string _tempImagePath = "";
-    private Texture2D _selectedImageTexture;
+    private bool _isApiKeyEditableChatGPT = true; // Flag for API key editability
 
     private const string ChatGPTApiKeyPrefKey = "ChatGPTApiKey";
     private const string ChatGPTModelPrefKey = "ChatGPTSelectedModel";
@@ -37,7 +36,9 @@ public class ChatGPTTabHandler
         _parentWindow = parentWindow as GeminiChatGPTIntegrationEditor;
         _apiKey = EditorPrefs.GetString(ChatGPTApiKeyPrefKey, "");
         _selectedModelIndex = EditorPrefs.GetInt(ChatGPTModelPrefKey, 0);
+        _isApiKeyEditableChatGPT = string.IsNullOrEmpty(_apiKey); // Initialize editability based on saved key
         UpdateApiStatus();
+        UpdateChatDisplayText();
     }
 
     public void OnGUI(float editorWindowWidth, float editorWindowHeight)
@@ -47,25 +48,48 @@ public class ChatGPTTabHandler
 
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
         EditorGUILayout.LabelField("OpenAI API Key", EditorStyles.boldLabel);
+
+        GUI.enabled = _isApiKeyEditableChatGPT; // Control editability of the API key field
         _apiKey = EditorGUILayout.PasswordField("API 키:", _apiKey);
+        GUI.enabled = true; // Re-enable GUI for buttons and other elements
 
         EditorGUILayout.BeginHorizontal();
+
+        // "승인" (Approve) button: Only enabled if editable and API key is not empty
+        GUI.enabled = _isApiKeyEditableChatGPT && !string.IsNullOrEmpty(_apiKey);
         if (GUILayout.Button("승인", GUILayout.Height(30)))
         {
             EditorPrefs.SetString(ChatGPTApiKeyPrefKey, _apiKey);
             UpdateApiStatus();
+            _isApiKeyEditableChatGPT = false; // Lock editing after approval
         }
+
+        // "수정" (Edit) button: Only enabled if not editable and API key is approved
+        GUI.enabled = !_isApiKeyEditableChatGPT && IsApiKeyApproved();
+        if (GUILayout.Button("수정", GUILayout.Height(30)))
+        {
+            _isApiKeyEditableChatGPT = true; // Unlock for editing
+        }
+
+        // "API 키 초기화" (Reset API Key) button: Always enabled if an API key exists
+        GUI.enabled = !string.IsNullOrEmpty(_apiKey);
         if (GUILayout.Button("API 키 초기화", GUILayout.Height(30)))
         {
             _apiKey = "";
             EditorPrefs.DeleteKey(ChatGPTApiKeyPrefKey);
             UpdateApiStatus();
+            _isApiKeyEditableChatGPT = true; // Enable editing after reset
         }
+
+        // "API 키 받으러 가기" (Go to Get API Key) button: Always enabled
+        GUI.enabled = true;
         if (GUILayout.Button("API 키 받으러 가기", GUILayout.Height(30)))
         {
             Application.OpenURL("https://platform.openai.com/account/api-keys");
         }
         EditorGUILayout.EndHorizontal();
+        GUI.enabled = true; // Ensure GUI is fully re-enabled after buttons
+
         EditorGUILayout.HelpBox(_apiStatus, IsApiKeyApproved() ? MessageType.Info : MessageType.Warning);
         EditorGUILayout.EndVertical();
         EditorGUILayout.Space(10);
@@ -79,38 +103,27 @@ public class ChatGPTTabHandler
             EditorPrefs.SetInt(ChatGPTModelPrefKey, _selectedModelIndex);
             _messages.Clear();
             _inputPrompt = "";
-            _tempImagePath = "";
-            _selectedImageTexture = null;
+            UpdateChatDisplayText();
         }
         EditorGUILayout.EndVertical();
         EditorGUILayout.Space(10);
 
         // Height for the top fixed sections
         float topFixedSectionHeight =
-            (EditorGUIUtility.singleLineHeight * 2 + 10) + // API Key section
-            (30 + 10) + // Buttons
+            (EditorGUIUtility.singleLineHeight * 2 + 10) + // API Key label + password field
+            (30 + 10) + // Buttons (approx height + space)
             40 + // HelpBox for API status
             (EditorGUIUtility.singleLineHeight * 2 + 10) + // Model Selection
             40; // HelpBox for model selection
 
-        // Height of the image selection UI block
-        float imageUIBlockHeight =
-            25 + // Image file select/remove buttons
-            EditorGUIUtility.singleLineHeight + // HelpBox
-            100 + // Image preview
-            5 + // Space after helpbox
-            5 + // Space after preview
-            10; // Additional padding
-
         // Height of the "질문하기" section content
         float askQuestionSectionContentHeight =
             EditorGUIUtility.singleLineHeight + 5 + // "질문하기" label
-            imageUIBlockHeight + // Image UI block
             60 + // Text area
             40 + 10; // Buttons + space
 
         // Total bottom space, increased to prevent clipping
-        float totalGuaranteedBottomSpace = askQuestionSectionContentHeight + 80; // Increased padding
+        float totalGuaranteedBottomSpace = askQuestionSectionContentHeight + 80;
 
         float chatScrollViewHeight = editorWindowHeight - topFixedSectionHeight - totalGuaranteedBottomSpace;
 
@@ -127,84 +140,26 @@ public class ChatGPTTabHandler
         EditorGUILayout.LabelField("채팅", EditorStyles.boldLabel);
 
         _scrollPos = EditorGUILayout.BeginScrollView(_scrollPos, GUILayout.Height(chatScrollViewHeight));
-
-        foreach (var message in _messages)
-        {
-            GUIStyle style = new GUIStyle(EditorStyles.wordWrappedLabel);
-            style.richText = true;
-            if (message.Type == MemoEntry.MessageType.User)
-            {
-                style.normal.textColor = Color.white;
-                EditorGUILayout.SelectableLabel($"<b>[나]</b> {message.Content}", style);
-            }
-            else
-            {
-                style.normal.textColor = new Color(0.7f, 0.8f, 1.0f);
-                EditorGUILayout.SelectableLabel($"<b>[ChatGPT]</b> {message.Content}", style);
-            }
-            EditorGUILayout.Space(5);
-        }
+        GUIStyle chatStyle = new GUIStyle(EditorStyles.textArea);
+        chatStyle.richText = true;
+        EditorGUILayout.SelectableLabel(_chatDisplayText, chatStyle, GUILayout.ExpandHeight(true));
+        EditorGUILayout.EndScrollView();
 
         if (_isSendingRequest)
         {
             EditorGUILayout.HelpBox("ChatGPT 응답 대기 중...", MessageType.Info);
         }
 
-        EditorGUILayout.EndScrollView();
         EditorGUILayout.EndVertical();
-        EditorGUILayout.Space(20); // Increased bottom margin
+        EditorGUILayout.Space(20);
 
         EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandWidth(true));
         EditorGUILayout.LabelField("질문하기", EditorStyles.boldLabel);
 
-        bool isVisionModel = IsVisionModel(_selectedModelIndex);
-        EditorGUILayout.BeginHorizontal();
-        if (GUILayout.Button("이미지 파일 선택", GUILayout.Height(25), GUILayout.Width(150)))
-        {
-            string path = EditorUtility.OpenFilePanel("이미지 선택", "", "png,jpg,jpeg");
-            if (!string.IsNullOrEmpty(path))
-            {
-                _tempImagePath = path;
-                LoadImageTexture(_tempImagePath);
-            }
-        }
-        if (_selectedImageTexture != null)
-        {
-            if (GUILayout.Button("이미지 제거", GUILayout.Height(25), GUILayout.Width(80)))
-            {
-                _tempImagePath = "";
-                _selectedImageTexture = null;
-            }
-        }
-        EditorGUILayout.EndHorizontal();
-
-        if (_selectedImageTexture != null)
-        {
-            EditorGUILayout.HelpBox($"선택된 이미지: {Path.GetFileName(_tempImagePath)}", MessageType.Info);
-            GUILayout.Label(_selectedImageTexture, GUILayout.Width(100), GUILayout.Height(100));
-        }
-        else if (!string.IsNullOrEmpty(_tempImagePath))
-        {
-            EditorGUILayout.HelpBox($"선택된 이미지: {Path.GetFileName(_tempImagePath)} (로딩 실패 또는 유효하지 않은 파일)", MessageType.Warning);
-        }
-        else
-        {
-            EditorGUILayout.HelpBox("텍스트와 함께 전송할 이미지를 선택하세요. (선택 사항)", MessageType.Info);
-        }
-        EditorGUILayout.Space(5);
-
         _inputPrompt = EditorGUILayout.TextArea(_inputPrompt, GUILayout.MinHeight(60));
 
         EditorGUILayout.BeginHorizontal();
-        bool canSend = IsApiKeyApproved() && !_isSendingRequest;
-        if (isVisionModel)
-        {
-            canSend = canSend && (!string.IsNullOrEmpty(_inputPrompt) || !string.IsNullOrEmpty(_tempImagePath));
-        }
-        else
-        {
-            canSend = canSend && !string.IsNullOrEmpty(_inputPrompt);
-        }
+        bool canSend = IsApiKeyApproved() && !_isSendingRequest && !string.IsNullOrEmpty(_inputPrompt);
 
         GUI.enabled = canSend;
         if (GUILayout.Button("전송", GUILayout.Height(40)))
@@ -216,13 +171,12 @@ public class ChatGPTTabHandler
         {
             _messages.Clear();
             _inputPrompt = "";
-            _tempImagePath = "";
-            _selectedImageTexture = null;
+            UpdateChatDisplayText();
         }
         GUI.enabled = true;
         EditorGUILayout.EndHorizontal();
         EditorGUILayout.EndVertical();
-        EditorGUILayout.Space(20); // Additional bottom margin to prevent clipping
+        EditorGUILayout.Space(20);
     }
 
     private void UpdateApiStatus()
@@ -238,15 +192,41 @@ public class ChatGPTTabHandler
         _parentWindow?.Repaint();
     }
 
+    private void UpdateChatDisplayText()
+    {
+        StringBuilder chatText = new StringBuilder();
+        foreach (var message in _messages)
+        {
+            switch (message.Type)
+            {
+                case MemoEntry.MessageType.User:
+                    chatText.AppendLine($"<color=#3366FF><b>[나]</b></color> {message.Content}");
+                    break;
+                case MemoEntry.MessageType.AI:
+                    chatText.AppendLine($"<color=#008000><b>[ChatGPT]</b></color> {message.Content}");
+                    break;
+                case MemoEntry.MessageType.Error:
+                    chatText.AppendLine($"<color=red><b>[오류]</b></color> {message.Content}");
+                    break;
+                case MemoEntry.MessageType.Info:
+                    chatText.AppendLine($"<color=grey><b>[정보]</b></color> {message.Content}");
+                    break;
+                case MemoEntry.MessageType.Warning:
+                    chatText.AppendLine($"<color=orange><b>[경고]</b></color> {message.Content}");
+                    break;
+                default:
+                    chatText.AppendLine($"{message.Content}");
+                    break;
+            }
+            chatText.AppendLine(); // Add an empty line after each message for spacing
+        }
+        _chatDisplayText = chatText.ToString();
+        _parentWindow?.Repaint();
+    }
+
     private bool IsApiKeyApproved()
     {
         return !string.IsNullOrEmpty(_apiKey);
-    }
-
-    private bool IsVisionModel(int modelIndex)
-    {
-        string modelName = _chatGPTModels[modelIndex];
-        return modelName == "gpt-4o" || modelName == "gpt-4-turbo";
     }
 
     public async void SendChatGPTQuery(string prompt)
@@ -257,23 +237,17 @@ public class ChatGPTTabHandler
             return;
         }
 
-        bool isVisionModelSelected = IsVisionModel(_selectedModelIndex);
-
-        if (string.IsNullOrEmpty(prompt) && (_selectedImageTexture == null || !isVisionModelSelected))
+        if (string.IsNullOrEmpty(prompt))
         {
-            EditorUtility.DisplayDialog("경고", "질문 내용을 입력해주세요. (이미지 모델은 이미지도 선택 가능)", "확인");
+            EditorUtility.DisplayDialog("경고", "질문 내용을 입력해주세요.", "확인");
             return;
         }
 
-        if (isVisionModelSelected && string.IsNullOrEmpty(prompt) && _selectedImageTexture == null)
-        {
-            EditorUtility.DisplayDialog("경고", "이미지 모델을 사용하는 경우, 질문 내용이나 이미지를 선택해야 합니다.", "확인");
-            return;
-        }
-
+        // Add user message to history (except for statistics analysis)
         if (_parentWindow?.GetStatisticsTabHandler().IsAIAnalysisInProgress() == false)
         {
             _messages.Add(new MemoEntry(prompt, MemoEntry.MessageType.User));
+            UpdateChatDisplayText();
         }
 
         _isSendingRequest = true;
@@ -298,27 +272,7 @@ public class ChatGPTTabHandler
                     }
                 }
 
-                if (isVisionModelSelected && _selectedImageTexture != null)
-                {
-                    byte[] imageBytes = File.ReadAllBytes(_tempImagePath);
-                    string base64Image = Convert.ToBase64String(imageBytes);
-
-                    var contentParts = new List<ChatGPTRequestContentPart>();
-                    if (!string.IsNullOrEmpty(prompt))
-                    {
-                        contentParts.Add(new ChatGPTRequestContentPart { type = "text", text = prompt });
-                    }
-                    contentParts.Add(new ChatGPTRequestContentPart
-                    {
-                        type = "image_url",
-                        image_url = new ChatGPTRequestContentPart.ImageUrl { url = $"data:{GetMimeType(_tempImagePath)};base64,{base64Image}", detail = "auto" }
-                    });
-                    requestMessages.Add(new ChatGPTRequestMessage(contentParts.ToArray(), "user"));
-                }
-                else
-                {
-                    requestMessages.Add(new ChatGPTRequestMessage(prompt, "user"));
-                }
+                requestMessages.Add(new ChatGPTRequestMessage(prompt, "user"));
 
                 ChatGPTRequest chatGPTRequest = new ChatGPTRequest
                 {
@@ -342,35 +296,22 @@ public class ChatGPTTabHandler
                         _parentWindow.GetQuestionListTabHandler().AddQuestion(prompt, aiResponse, AiServiceType.ChatGPT);
                         _parentWindow.GetStatisticsTabHandler().RecordKeyword(prompt);
                         _parentWindow.GetStatisticsTabHandler().RecordKeyword(aiResponse);
+                        UpdateChatDisplayText();
                     }
                     else
                     {
                         string errorMessage = $"ChatGPT 응답에 오류가 있습니다. 응답: {responseBody}";
                         Debug.LogError(errorMessage);
-                        if (_messages.Any() && _messages[_messages.Count - 1].Content == "응답 대기 중...")
-                        {
-                            _messages[_messages.Count - 1].Content = errorMessage;
-                            _messages[_messages.Count - 1].Timestamp = DateTime.Now;
-                        }
-                        else
-                        {
-                            _messages.Add(new MemoEntry(errorMessage, MemoEntry.MessageType.Error));
-                        }
+                        _messages.Add(new MemoEntry(errorMessage, MemoEntry.MessageType.Error));
+                        UpdateChatDisplayText();
                     }
                 }
                 else
                 {
                     string errorMessage = $"ChatGPT API 요청 실패: {response.StatusCode} - {responseBody}";
                     Debug.LogError(errorMessage);
-                    if (_messages.Any() && _messages[_messages.Count - 1].Content == "응답 대기 중...")
-                    {
-                        _messages[_messages.Count - 1].Content = errorMessage;
-                        _messages[_messages.Count - 1].Timestamp = DateTime.Now;
-                    }
-                    else
-                    {
-                        _messages.Add(new MemoEntry(errorMessage, MemoEntry.MessageType.Error));
-                    }
+                    _messages.Add(new MemoEntry(errorMessage, MemoEntry.MessageType.Error));
+                    UpdateChatDisplayText();
                 }
             }
         }
@@ -378,71 +319,26 @@ public class ChatGPTTabHandler
         {
             string errorMessage = $"네트워크 오류 또는 API 통신 문제: {e.Message}";
             Debug.LogError(errorMessage);
-            if (_messages.Any() && _messages[_messages.Count - 1].Content == "응답 대기 중...")
-            {
-                _messages[_messages.Count - 1].Content = errorMessage;
-                _messages[_messages.Count - 1].Timestamp = DateTime.Now;
-            }
-            else
-            {
-                _messages.Add(new MemoEntry(errorMessage, MemoEntry.MessageType.Error));
-            }
+            _messages.Add(new MemoEntry(errorMessage, MemoEntry.MessageType.Error));
+            UpdateChatDisplayText();
         }
         catch (Exception e)
         {
             string errorMessage = $"예상치 못한 오류 발생: {e.Message}";
             Debug.LogError(errorMessage);
-            if (_messages.Any() && _messages[_messages.Count - 1].Content == "응답 대기 중...")
-            {
-                _messages[_messages.Count - 1].Content = errorMessage;
-                _messages[_messages.Count - 1].Timestamp = DateTime.Now;
-            }
-            else
-            {
-                _messages.Add(new MemoEntry(errorMessage, MemoEntry.MessageType.Error));
-            }
+            _messages.Add(new MemoEntry(errorMessage, MemoEntry.MessageType.Error));
+            UpdateChatDisplayText();
         }
         finally
         {
             _inputPrompt = "";
-            _tempImagePath = "";
-            _selectedImageTexture = null;
             _isSendingRequest = false;
             _parentWindow?.Repaint();
-            _scrollPos.y = Mathf.Infinity;
+            _scrollPos.y = Mathf.Infinity; // Scroll to the bottom after sending a request
             if (_parentWindow?.GetStatisticsTabHandler().IsAIAnalysisInProgress() == true)
             {
                 _parentWindow.GetStatisticsTabHandler().SetAIAnalysisInProgress(false);
             }
-        }
-    }
-
-    private void LoadImageTexture(string path)
-    {
-        if (File.Exists(path))
-        {
-            byte[] fileData = File.ReadAllBytes(path);
-            _selectedImageTexture = new Texture2D(2, 2);
-            _selectedImageTexture.LoadImage(fileData);
-        }
-        else
-        {
-            _selectedImageTexture = null;
-            Debug.LogError("Failed to load image: " + path);
-        }
-    }
-
-    private string GetMimeType(string filePath)
-    {
-        string extension = Path.GetExtension(filePath).ToLower();
-        switch (extension)
-        {
-            case ".png": return "image/png";
-            case ".jpg":
-            case ".jpeg": return "image/jpeg";
-            case ".gif": return "image/gif";
-            case ".webp": return "image/webp";
-            default: return "application/octet-stream";
         }
     }
 
@@ -460,33 +356,11 @@ public class ChatGPTTabHandler
     {
         public string role;
         public string content;
-        public ChatGPTRequestContentPart[] content_parts;
 
         public ChatGPTRequestMessage(string content, string role)
         {
             this.content = content;
             this.role = role;
-        }
-
-        public ChatGPTRequestMessage(ChatGPTRequestContentPart[] contentParts, string role)
-        {
-            this.content_parts = contentParts;
-            this.role = role;
-        }
-    }
-
-    [System.Serializable]
-    private class ChatGPTRequestContentPart
-    {
-        public string type;
-        public string text;
-        public ImageUrl image_url;
-
-        [System.Serializable]
-        public class ImageUrl
-        {
-            public string url;
-            public string detail;
         }
     }
 
