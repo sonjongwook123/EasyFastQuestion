@@ -2,149 +2,108 @@
 using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
+using System;
 
 public class QuestionDetailWindow : EditorWindow
 {
     private QuestionListTabHandler.QuestionEntry _currentEntry;
-    private QuestionListTabHandler _parentHandler;
-    private Vector2 _questionAnswerScrollPos;
-    private Vector2 _memoListScrollPos;
+    private QuestionListTabHandler _questionListHandler;
+    private GeminiChatGPTIntegrationEditor _parentEditorWindow;
+
+    private Vector2 _memoScrollPos;
     private string _newMemoText = "";
 
+    private const int MemosPerPage = 3;
     private int _currentMemoPage = 0;
-    private const int MemosPerPage = 5;
 
-    public static void ShowWindow(QuestionListTabHandler.QuestionEntry entry, QuestionListTabHandler parentHandler)
+    public static void ShowWindow(QuestionListTabHandler.QuestionEntry entry, QuestionListTabHandler handler, GeminiChatGPTIntegrationEditor parentEditor)
     {
         QuestionDetailWindow window = GetWindow<QuestionDetailWindow>("질문 상세");
         window._currentEntry = entry;
-        window._parentHandler = parentHandler;
-        window.minSize = new Vector2(400, 550);
-        window.Show();
-        
-        window._questionAnswerScrollPos = Vector2.zero;
-        window._memoListScrollPos = Vector2.zero;
-        window._newMemoText = "";
+        window._questionListHandler = handler;
+        window._parentEditorWindow = parentEditor;
         window._currentMemoPage = 0;
-
-        window.Repaint();
+        window.ShowUtility();
+        window.Focus();
     }
 
     private void OnGUI()
     {
-        if (_currentEntry == null)
+        if (_currentEntry == null || _questionListHandler == null || _parentEditorWindow == null)
         {
-            EditorGUILayout.HelpBox("표시할 질문이 없습니다.", MessageType.Info);
+            EditorGUILayout.HelpBox("표시할 질문 정보가 없습니다. 창을 닫고 다시 시도해주세요.", MessageType.Error);
             return;
         }
 
-        EditorGUILayout.LabelField("질문 상세 정보", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField("📚 질문 상세 정보", EditorStyles.boldLabel);
         EditorGUILayout.Space();
 
-        // 질문 및 답변 섹션
-        EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandHeight(true));
-        
-        EditorGUILayout.LabelField($"시간: {_currentEntry.Timestamp}", EditorStyles.miniLabel);
-        EditorGUILayout.LabelField($"AI 서비스: {_currentEntry.AiType}", EditorStyles.miniLabel);
-        EditorGUILayout.LabelField($"중요: {(_currentEntry.IsImportant ? "⭐ 예" : "아니오")}", EditorStyles.miniLabel);
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+        EditorGUILayout.SelectableLabel($"질문 ({_currentEntry.Timestamp:yyyy-MM-dd HH:mm:ss} - {_currentEntry.ServiceType}):", EditorStyles.boldLabel);
+        EditorGUILayout.SelectableLabel(_currentEntry.Question, EditorStyles.wordWrappedLabel, GUILayout.MinHeight(50));
         EditorGUILayout.Space(5);
 
-        _questionAnswerScrollPos = EditorGUILayout.BeginScrollView(_questionAnswerScrollPos, GUILayout.ExpandHeight(true));
+        EditorGUILayout.SelectableLabel("답변:", EditorStyles.boldLabel);
+        EditorGUILayout.SelectableLabel(_currentEntry.Answer, EditorStyles.wordWrappedLabel, GUILayout.MinHeight(100));
+        EditorGUILayout.Space(10);
 
-        GUIStyle combinedTextStyle = new GUIStyle(EditorStyles.wordWrappedLabel);
-        combinedTextStyle.normal.textColor = EditorStyles.label.normal.textColor;
-        combinedTextStyle.padding = new RectOffset(5, 5, 5, 5);
-        combinedTextStyle.richText = true;
+        bool newIsImportant = EditorGUILayout.ToggleLeft("중요 표시:", _currentEntry.IsImportant, GUILayout.ExpandWidth(true));
+        if (newIsImportant != _currentEntry.IsImportant)
+        {
+            _currentEntry.IsImportant = newIsImportant;
+            _questionListHandler.SaveQuestions();
+            _parentEditorWindow.Repaint();
+        }
 
-        string combinedText = $"<color=white><b>질문:</b>\n{_currentEntry.Question}</color>\n\n<color=#ADD8E6><b>답변:</b>\n{_currentEntry.Answer}</color>";
-        EditorGUILayout.SelectableLabel(combinedText, combinedTextStyle, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
-
-        EditorGUILayout.EndScrollView();
         EditorGUILayout.EndVertical();
         EditorGUILayout.Space(10);
 
-        // 메모 섹션
-        EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.Height(300)); // 메모 섹션 세로 크기 증가
-        EditorGUILayout.LabelField("관련 메모", EditorStyles.boldLabel);
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+        EditorGUILayout.LabelField("📝 메모", EditorStyles.boldLabel);
         EditorGUILayout.Space(5);
 
-        _memoListScrollPos = EditorGUILayout.BeginScrollView(_memoListScrollPos, GUILayout.ExpandHeight(true));
-
-        List<string> allMemos = _currentEntry.Memos ?? new List<string>();
-        int totalMemos = allMemos.Count;
-        int totalMemoPages = Mathf.CeilToInt((float)totalMemos / MemosPerPage);
+        int totalMemos = _currentEntry.Memos?.Count ?? 0;
+        int startIndex = _currentMemoPage * MemosPerPage;
+        List<MemoEntry> displayedMemoEntries = _currentEntry.Memos?.Skip(startIndex).Take(MemosPerPage).ToList() ?? new List<MemoEntry>();
 
         if (totalMemos == 0)
         {
-            _currentMemoPage = 0;
-        }
-        else if (_currentMemoPage >= totalMemoPages)
-        {
-            _currentMemoPage = totalMemoPages - 1;
-        }
-        else if (_currentMemoPage < 0)
-        {
-            _currentMemoPage = 0;
-        }
-
-        int startIndex = _currentMemoPage * MemosPerPage;
-        List<string> displayedMemos = allMemos
-            .Skip(startIndex)
-            .Take(MemosPerPage)
-            .ToList();
-
-        if (displayedMemos.Count > 0)
-        {
-            for (int i = 0; i < displayedMemos.Count; i++)
-            {
-                EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.SelectableLabel(displayedMemos[i], EditorStyles.wordWrappedLabel);
-                if (GUILayout.Button("삭제", GUILayout.Width(50)))
-                {
-                    int originalIndex = startIndex + i;
-                    if (originalIndex < _currentEntry.Memos.Count)
-                    {
-                        _currentEntry.Memos.RemoveAt(originalIndex);
-                        _parentHandler.UpdateQuestionEntry(_currentEntry);
-                        // 메모 삭제 후, 현재 페이지의 메모가 모두 삭제되면 이전 페이지로 이동
-                        if (displayedMemos.Count == 1 && _currentMemoPage > 0 && (_currentEntry.Memos.Count % MemosPerPage == 0))
-                        {
-                            _currentMemoPage--;
-                        }
-                        Repaint();
-                    }
-                    GUIUtility.ExitGUI();
-                }
-                EditorGUILayout.EndHorizontal();
-            }
+            EditorGUILayout.HelpBox("아직 작성된 메모가 없습니다.", MessageType.Info);
         }
         else
         {
-            EditorGUILayout.HelpBox("추가된 메모가 없습니다.", MessageType.Info);
+            _memoScrollPos = EditorGUILayout.BeginScrollView(_memoScrollPos, GUILayout.ExpandHeight(true));
+            foreach (var memo in displayedMemoEntries)
+            {
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+                EditorGUILayout.SelectableLabel($"[{memo.Timestamp:yyyy-MM-dd HH:mm:ss}]", EditorStyles.boldLabel);
+                EditorGUILayout.SelectableLabel(memo.Content, EditorStyles.wordWrappedLabel);
+                EditorGUILayout.EndVertical();
+                EditorGUILayout.Space(5);
+            }
+            EditorGUILayout.EndScrollView();
         }
 
-        EditorGUILayout.EndScrollView();
-
-        // 메모 페이징 UI
-        if (totalMemoPages > 1)
+        int totalPages = (totalMemos + MemosPerPage - 1) / MemosPerPage;
+        if (totalPages > 1)
         {
+            EditorGUILayout.Space(5);
             EditorGUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace();
             GUI.enabled = (_currentMemoPage > 0);
-            if (GUILayout.Button("◀ 이전", GUILayout.Width(60)))
+            if (GUILayout.Button("◀ 이전 메모", GUILayout.Width(100)))
             {
                 _currentMemoPage--;
-                _memoListScrollPos.y = 0;
+                this.Repaint();
             }
             GUI.enabled = true;
-
-            EditorGUILayout.LabelField($"{_currentMemoPage + 1} / {totalMemoPages}", EditorStyles.centeredGreyMiniLabel, GUILayout.Width(60));
-
-            GUI.enabled = (_currentMemoPage < totalMemoPages - 1);
-            if (GUILayout.Button("다음 ▶", GUILayout.Width(60)))
+            EditorGUILayout.LabelField($"페이지 {_currentMemoPage + 1} / {totalPages}", GUILayout.Width(100), GUILayout.ExpandWidth(false));
+            GUI.enabled = (_currentMemoPage < totalPages - 1);
+            if (GUILayout.Button("다음 메모 ▶", GUILayout.Width(100)))
             {
                 _currentMemoPage++;
-                _memoListScrollPos.y = 0;
+                this.Repaint();
             }
             GUI.enabled = true;
             GUILayout.FlexibleSpace();
@@ -153,33 +112,45 @@ public class QuestionDetailWindow : EditorWindow
 
         EditorGUILayout.Space(10);
         EditorGUILayout.LabelField("새 메모 추가:", EditorStyles.boldLabel);
-        _newMemoText = EditorGUILayout.TextArea(_newMemoText, GUILayout.MinHeight(50));
-
-        if (GUILayout.Button("메모 추가", GUILayout.Height(30)))
+        _newMemoText = EditorGUILayout.TextArea(_newMemoText, GUILayout.MinHeight(40));
+        if (GUILayout.Button("메모 추가", GUILayout.Height(25)))
         {
-            if (!string.IsNullOrEmpty(_newMemoText.Trim()))
+            if (!string.IsNullOrWhiteSpace(_newMemoText))
             {
-                _parentHandler.AddMemoToQuestion(_currentEntry, _newMemoText.Trim());
+                _currentEntry.Memos.Add(new MemoEntry(_newMemoText, DateTime.Now));
                 _newMemoText = "";
-                int newTotalMemos = _currentEntry.Memos.Count;
-                int newTotalMemoPages = Mathf.CeilToInt((float)newTotalMemos / MemosPerPage);
-                // 새 메모 추가 후 마지막 페이지로 이동
-                if (newTotalMemos > 0 && _currentMemoPage < newTotalMemoPages -1 ) 
-                {
-                    _currentMemoPage = newTotalMemoPages - 1;
-                }
-                Repaint();
+                _questionListHandler.SaveQuestions();
+                _parentEditorWindow.Repaint();
+                this.Repaint();
+                _currentMemoPage = (totalMemos + 1 + MemosPerPage - 1) / MemosPerPage - 1;
+                GUIUtility.ExitGUI(); // Repaint 루프 탈출 방지
             }
             else
             {
-                EditorUtility.DisplayDialog("경고", "메모 내용을 입력해주세요.", "확인");
+                EditorUtility.DisplayDialog("경고", "추가할 메모 내용을 입력해주세요.", "확인");
             }
         }
-        EditorGUILayout.EndVertical();
 
-        if (GUILayout.Button("닫기", GUILayout.Height(30)))
+        EditorGUILayout.EndVertical();
+        EditorGUILayout.Space(10);
+
+        EditorGUILayout.BeginHorizontal();
+        GUILayout.FlexibleSpace();
+        if (GUILayout.Button("삭제", GUILayout.Width(80), GUILayout.Height(30)))
         {
-            Close();
+            if (EditorUtility.DisplayDialog("질문 삭제 확인", "이 질문을 정말 삭제하시겠습니까?", "삭제", "취소"))
+            {
+                _questionListHandler.RemoveQuestion(_currentEntry);
+                _questionListHandler.SaveQuestions();
+                _parentEditorWindow.Repaint();
+                this.Close();
+            }
         }
+        if (GUILayout.Button("닫기", GUILayout.Width(80), GUILayout.Height(30)))
+        {
+            this.Close();
+        }
+        GUILayout.FlexibleSpace();
+        EditorGUILayout.EndHorizontal();
     }
 }

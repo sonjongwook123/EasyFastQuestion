@@ -5,94 +5,193 @@ using System.IO;
 using System.Linq;
 using System;
 
-public enum AiServiceType
-{
-    None,
-    Gemini,
-    ChatGPT
-}
-
 [System.Serializable]
 public class QuestionListTabHandler
 {
+    private GeminiChatGPTIntegrationEditor _parentWindow;
+    public List<QuestionEntry> _questions = new List<QuestionEntry>();
     private Vector2 _scrollPos;
-    private List<QuestionEntry> _questions = new List<QuestionEntry>();
     private string _historyFilePath;
     private string _scriptFolderPath;
 
-    private int _selectedSubTabIndex = 0;
-    private string[] _subTabNames = { "전체 질문", "제미니 질문", "지피티 질문", "중요 질문" };
-
+    private int _selectedCategoryTab = 0; // 0: 전체, 1: 중요, 2: Gemini, 3: ChatGPT
+    private string[] _categoryTabNames = { "전체", "중요", "Gemini", "ChatGPT" };
     private string _searchQuery = "";
-    private int _currentPage = 0;
-    private const int ItemsPerPage = 20;
+
+    [System.Serializable]
+    public class QuestionEntry
+    {
+        public string Question;
+        public string Answer;
+        public AiServiceType ServiceType;
+        public List<MemoEntry> Memos;
+        public DateTime Timestamp;
+        public bool IsImportant;
+
+        public QuestionEntry(string question, string answer, AiServiceType serviceType, DateTime timestamp)
+        {
+            Question = question;
+            Answer = answer;
+            ServiceType = serviceType;
+            Memos = new List<MemoEntry>();
+            Timestamp = timestamp;
+            IsImportant = false;
+        }
+    }
+
+    [System.Serializable]
+    private class QuestionHistoryWrapper
+    {
+        public QuestionEntry[] Questions;
+    }
 
     public QuestionListTabHandler() { }
 
     public void Initialize(EditorWindow parentWindow)
     {
+        _parentWindow = parentWindow as GeminiChatGPTIntegrationEditor;
         if (string.IsNullOrEmpty(_scriptFolderPath))
         {
-            string scriptPath = AssetDatabase.GetAssetPath(MonoScript.FromScriptableObject(parentWindow));
-            _scriptFolderPath = Path.GetDirectoryName(scriptPath);
-            _historyFilePath = Path.Combine(_scriptFolderPath, "question_history.json");
-            LoadHistory();
+            string[] guids = AssetDatabase.FindAssets("t:Script " + typeof(QuestionListTabHandler).Name);
+            if (guids.Length > 0)
+            {
+                string scriptPath = AssetDatabase.GUIDToAssetPath(guids[0]);
+                _scriptFolderPath = Path.GetDirectoryName(scriptPath);
+                _historyFilePath = Path.Combine(_scriptFolderPath, "question_history.json");
+            }
+            else
+            {
+                Debug.LogError("QuestionListTabHandler.cs 파일을 찾을 수 없습니다. 경로 설정을 수동으로 확인해주세요.");
+                _scriptFolderPath = Application.dataPath + "/Editor"; // fallback
+                _historyFilePath = Path.Combine(_scriptFolderPath, "question_history.json");
+            }
+            LoadQuestions();
         }
     }
 
-    public void AddQuestion(string question, string answer, AiServiceType aiType)
+    public void AddQuestion(string question, string answer, AiServiceType serviceType)
     {
-        if (_questions == null)
+        _questions.Insert(0, new QuestionEntry(question, answer, serviceType, DateTime.Now));
+        SaveQuestions();
+    }
+
+    public void RemoveQuestion(QuestionEntry entryToRemove)
+    {
+        _questions.Remove(entryToRemove);
+    }
+
+    public void OnGUI(float editorWindowWidth, float editorWindowHeight)
+    {
+        EditorGUILayout.LabelField("📚 질문 리스트", EditorStyles.boldLabel);
+        EditorGUILayout.Space();
+
+        EditorGUILayout.BeginHorizontal(EditorStyles.helpBox);
+        EditorGUILayout.LabelField("검색:", GUILayout.Width(40));
+        string newSearchQuery = EditorGUILayout.TextField(_searchQuery, GUILayout.ExpandWidth(true));
+        if (newSearchQuery != _searchQuery)
         {
-            _questions = new List<QuestionEntry>();
+            _searchQuery = newSearchQuery;
+            _parentWindow?.Repaint();
+        }
+        if (GUILayout.Button("초기화", GUILayout.Width(60)))
+        {
+            _searchQuery = "";
+            _parentWindow?.Repaint();
+        }
+        EditorGUILayout.EndHorizontal();
+        EditorGUILayout.Space(5);
+
+        int newSelectedCategoryTab = GUILayout.Toolbar(_selectedCategoryTab, _categoryTabNames);
+        if (newSelectedCategoryTab != _selectedCategoryTab)
+        {
+            _selectedCategoryTab = newSelectedCategoryTab;
+            _parentWindow?.Repaint();
+        }
+        EditorGUILayout.Space(10);
+
+        List<QuestionEntry> filteredQuestions = FilterAndSearchQuestions();
+
+        _scrollPos = EditorGUILayout.BeginScrollView(_scrollPos, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
+
+        if (!filteredQuestions.Any())
+        {
+            EditorGUILayout.HelpBox("조건에 맞는 질문 내역이 없습니다.",MessageType.Info);
+        }
+        else
+        {
+            foreach (var entry in filteredQuestions)
+            {
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+                
+                EditorGUILayout.BeginHorizontal();
+                bool newIsImportant = EditorGUILayout.ToggleLeft("", entry.IsImportant, GUILayout.Width(20));
+                if (newIsImportant != entry.IsImportant)
+                {
+                    entry.IsImportant = newIsImportant;
+                    SaveQuestions();
+                    _parentWindow?.Repaint();
+                }
+                EditorGUILayout.LabelField($"[{entry.Timestamp:yyyy-MM-dd HH:mm}] {entry.ServiceType} 질문:", EditorStyles.boldLabel);
+                EditorGUILayout.EndHorizontal();
+
+                EditorGUILayout.SelectableLabel(entry.Question, EditorStyles.wordWrappedLabel);
+                
+                EditorGUILayout.Space(5);
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.FlexibleSpace();
+                if (GUILayout.Button("상세 보기", GUILayout.Width(100)))
+                {
+                    QuestionDetailWindow.ShowWindow(entry, this, _parentWindow);
+                }
+                if (GUILayout.Button("삭제", GUILayout.Width(60)))
+                {
+                    if (EditorUtility.DisplayDialog("질문 삭제 확인", "이 질문을 정말 삭제하시겠습니까?", "삭제", "취소"))
+                    {
+                        RemoveQuestion(entry);
+                        SaveQuestions();
+                        _parentWindow?.Repaint();
+                        GUIUtility.ExitGUI(); // 삭제 후 OnGUI 재진입 방지
+                    }
+                }
+                EditorGUILayout.EndHorizontal();
+                EditorGUILayout.EndVertical();
+                EditorGUILayout.Space(5);
+            }
+        }
+        EditorGUILayout.EndScrollView();
+    }
+
+    private List<QuestionEntry> FilterAndSearchQuestions()
+    {
+        IEnumerable<QuestionEntry> query = _questions;
+
+        switch (_selectedCategoryTab)
+        {
+            case 1: // 중요
+                query = query.Where(q => q.IsImportant);
+                break;
+            case 2: // Gemini
+                query = query.Where(q => q.ServiceType == AiServiceType.Gemini);
+                break;
+            case 3: // ChatGPT
+                query = query.Where(q => q.ServiceType == AiServiceType.ChatGPT);
+                break;
         }
 
-        QuestionEntry newEntry = new QuestionEntry
+        if (!string.IsNullOrWhiteSpace(_searchQuery))
         {
-            Question = question,
-            Answer = answer,
-            Timestamp = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
-            AiType = aiType,
-            IsImportant = false,
-            Memos = new List<string>()
-        };
-
-        _questions.Insert(0, newEntry);
-        SaveHistory();
-
-        _currentPage = 0;
-        _scrollPos.y = 0;
-    }
-
-    public void ToggleImportant(QuestionEntry entry)
-    {
-        entry.IsImportant = !entry.IsImportant;
-        SaveHistory();
-        EditorWindow.GetWindow<GeminiChatGPTIntegrationEditor>().Repaint();
-    }
-
-    public void AddMemoToQuestion(QuestionEntry entry, string memo)
-    {
-        if (entry.Memos == null)
-        {
-            entry.Memos = new List<string>();
+            string lowerSearchQuery = _searchQuery.ToLower();
+            query = query.Where(q =>
+                q.Question.ToLower().Contains(lowerSearchQuery) ||
+                q.Answer.ToLower().Contains(lowerSearchQuery) ||
+                q.Memos.Any(m => m.Content.ToLower().Contains(lowerSearchQuery))
+            );
         }
-        entry.Memos.Add(memo);
-        SaveHistory();
+
+        return query.ToList();
     }
 
-    public void UpdateQuestionEntry(QuestionEntry updatedEntry)
-    {
-        int index = _questions.FindIndex(q => q.Timestamp == updatedEntry.Timestamp && q.Question == updatedEntry.Question);
-        if (index != -1)
-        {
-            _questions[index] = updatedEntry;
-            SaveHistory();
-            EditorWindow.GetWindow<GeminiChatGPTIntegrationEditor>().Repaint();
-        }
-    }
-
-    public void LoadHistory()
+    public void LoadQuestions()
     {
         if (File.Exists(_historyFilePath))
         {
@@ -100,21 +199,16 @@ public class QuestionListTabHandler
             try
             {
                 QuestionHistoryWrapper wrapper = JsonUtility.FromJson<QuestionHistoryWrapper>(json);
-                if (wrapper != null && wrapper.Entries != null)
+                if (wrapper != null && wrapper.Questions != null)
                 {
-                    _questions = new List<QuestionEntry>(wrapper.Entries);
-                    foreach (var q in _questions)
-                    {
-                        if (q.Answer == null) q.Answer = "";
-                        if (q.Memos == null) q.Memos = new List<string>();
-                    }
+                    _questions = new List<QuestionEntry>(wrapper.Questions);
                 }
                 else
                 {
                     _questions = new List<QuestionEntry>();
                 }
             }
-            catch (System.Exception e)
+            catch (Exception e)
             {
                 Debug.LogError($"Failed to load question history: {e.Message}");
                 _questions = new List<QuestionEntry>();
@@ -124,164 +218,19 @@ public class QuestionListTabHandler
         {
             _questions = new List<QuestionEntry>();
         }
+        // 메모 리스트가 null인 경우 초기화
+        foreach (var q in _questions)
+        {
+            if (q.Memos == null) q.Memos = new List<MemoEntry>();
+        }
     }
 
-    private void SaveHistory()
+    public void SaveQuestions()
     {
         if (_questions == null) _questions = new List<QuestionEntry>();
-        QuestionHistoryWrapper wrapper = new QuestionHistoryWrapper { Entries = _questions.ToArray() };
+        QuestionHistoryWrapper wrapper = new QuestionHistoryWrapper { Questions = _questions.ToArray() };
         string json = JsonUtility.ToJson(wrapper, true);
         File.WriteAllText(_historyFilePath, json);
-    }
-
-    public void OnGUI(float editorWindowWidth, float editorWindowHeight)
-    {
-        EditorGUILayout.LabelField("❓ 질문 리스트", EditorStyles.boldLabel);
-        EditorGUILayout.Space();
-
-        _selectedSubTabIndex = GUILayout.Toolbar(_selectedSubTabIndex, _subTabNames);
-        EditorGUILayout.Space(10);
-
-        EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
-        _searchQuery = EditorGUILayout.TextField("검색:", _searchQuery, EditorStyles.toolbarSearchField);
-        if (GUILayout.Button("X", EditorStyles.toolbarButton, GUILayout.Width(20)))
-        {
-            _searchQuery = "";
-            GUI.FocusControl(null);
-        }
-        EditorGUILayout.EndHorizontal();
-        EditorGUILayout.Space(5);
-
-        _scrollPos = EditorGUILayout.BeginScrollView(_scrollPos, GUILayout.ExpandHeight(true));
-
-        List<QuestionEntry> filteredQuestions = new List<QuestionEntry>();
-
-        switch (_selectedSubTabIndex)
-        {
-            case 0:
-                filteredQuestions = _questions;
-                break;
-            case 1:
-                filteredQuestions = _questions.Where(q => q.AiType == AiServiceType.Gemini).ToList();
-                break;
-            case 2:
-                filteredQuestions = _questions.Where(q => q.AiType == AiServiceType.ChatGPT).ToList();
-                break;
-            case 3:
-                filteredQuestions = _questions.Where(q => q.IsImportant).ToList();
-                break;
-        }
-
-        if (!string.IsNullOrEmpty(_searchQuery))
-        {
-            string lowerSearchQuery = _searchQuery.ToLower();
-            filteredQuestions = filteredQuestions.Where(q =>
-                q.Question.ToLower().Contains(lowerSearchQuery) ||
-                q.Answer.ToLower().Contains(lowerSearchQuery) ||
-                (q.Memos != null && q.Memos.Any(m => m.ToLower().Contains(lowerSearchQuery)))
-            ).ToList();
-        }
-
-        int totalQuestions = filteredQuestions.Count;
-        int totalPages = Mathf.CeilToInt((float)totalQuestions / ItemsPerPage);
-
-        if (_currentPage >= totalPages && totalPages > 0)
-        {
-            _currentPage = totalPages - 1;
-        }
-        else if (totalPages == 0)
-        {
-            _currentPage = 0;
-        }
-
-        int startIndex = _currentPage * ItemsPerPage;
-        List<QuestionEntry> displayedQuestions = filteredQuestions
-            .Skip(startIndex)
-            .Take(ItemsPerPage)
-            .ToList();
-
-
-        if (displayedQuestions != null && displayedQuestions.Count > 0)
-        {
-            foreach (var entry in displayedQuestions)
-            {
-                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-                EditorGUILayout.LabelField($"시간: {entry.Timestamp} | AI: {entry.AiType} {(entry.IsImportant ? "⭐" : "")}", EditorStyles.miniLabel);
-                EditorGUILayout.LabelField(entry.Question, EditorStyles.wordWrappedLabel);
-                
-                EditorGUILayout.BeginHorizontal();
-                if (GUILayout.Button(entry.IsImportant ? "⭐ 중요 해제" : "⭐ 중요", GUILayout.Width(100)))
-                {
-                    ToggleImportant(entry);
-                }
-                if (GUILayout.Button("상세보기", GUILayout.Width(100)))
-                {
-                    QuestionDetailWindow.ShowWindow(entry, this);
-                }
-                EditorGUILayout.EndHorizontal();
-
-                EditorGUILayout.EndVertical();
-                EditorGUILayout.Space(5);
-            }
-        }
-        else
-        {
-            EditorGUILayout.HelpBox("아직 질문 내역이 없거나 검색 결과가 없습니다.", MessageType.Info);
-        }
-
-        EditorGUILayout.EndScrollView();
-
-        if (totalPages > 1)
-        {
-            EditorGUILayout.BeginHorizontal();
-            GUILayout.FlexibleSpace();
-            GUI.enabled = (_currentPage > 0);
-            if (GUILayout.Button("◀ 이전", GUILayout.Width(80)))
-            {
-                _currentPage--;
-                _scrollPos.y = 0;
-            }
-            GUI.enabled = true;
-
-            EditorGUILayout.LabelField($"{_currentPage + 1} / {totalPages}", EditorStyles.centeredGreyMiniLabel, GUILayout.Width(60));
-
-            GUI.enabled = (_currentPage < totalPages - 1);
-            if (GUILayout.Button("다음 ▶", GUILayout.Width(80)))
-            {
-                _currentPage++;
-                _scrollPos.y = 0;
-            }
-            GUI.enabled = true;
-            GUILayout.FlexibleSpace();
-            EditorGUILayout.EndHorizontal();
-        }
-
-
-        if (GUILayout.Button("질문 내역 지우기", GUILayout.Height(30)))
-        {
-            if (EditorUtility.DisplayDialog("내역 지우기", "정말로 모든 질문 내역을 지우시겠습니까?", "예", "아니오"))
-            {
-                _questions.Clear();
-                SaveHistory();
-                _currentPage = 0;
-            }
-        }
-    }
-
-    [System.Serializable]
-    public class QuestionEntry
-    {
-        public string Question;
-        public string Answer;
-        public string Timestamp;
-        public AiServiceType AiType;
-        public bool IsImportant;
-        public List<string> Memos;
-    }
-
-    [System.Serializable]
-    private class QuestionHistoryWrapper
-    {
-        public QuestionEntry[] Entries;
+        AssetDatabase.Refresh(); // Unity 에디터에 변경 사항 반영
     }
 }

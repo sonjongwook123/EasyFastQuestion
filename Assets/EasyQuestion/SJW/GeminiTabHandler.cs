@@ -1,467 +1,478 @@
 ﻿using UnityEditor;
 using UnityEngine;
-using System.Collections.Generic;
-using System.Diagnostics;
-using Debug = UnityEngine.Debug;
-using UnityEngine.Networking;
-using System.Text;
+using System.Net.Http;
 using System.Threading.Tasks;
-using System.IO;
-using System.Linq;
 using System;
+using System.IO;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.RegularExpressions;
+
+public enum GeminiModel
+{
+    GeminiPro,
+    GeminiProVision
+}
 
 [System.Serializable]
 public class GeminiTabHandler
 {
-    private string geminiQuery = "";
-    private Vector2 geminiScrollPos;
-    private List<MessageEntry> geminiMessages = new List<MessageEntry>();
-    private string geminiApiKey = "";
-    private string[] availableGeminiModels = { "gemini-pro", "gemini-1.5-flash", "gemini-1.5-pro" };
-    private string geminiAiVersion = "gemini-pro";
-    private bool isApiKeyApproved = false;
-    private bool isSendingRequest = false;
-    private bool isApprovingApiKey = false;
-    private bool showModelUnavailableWarning = false;
-    private bool showServiceSwapWarning = false;
-
-    private string apiKeyFilePath;
-    private string scriptFolderPath;
-
     private GeminiChatGPTIntegrationEditor _parentWindow;
+    private string _apiKey = "";
+    private string _inputPrompt = "";
+    private Vector2 _scrollPos;
+    private List<MemoEntry> _messages = new List<MemoEntry>();
+    private bool _isSendingRequest = false;
+    private string _apiStatus = "API 키를 입력하고 '승인'을 눌러주세요.";
 
-    public GeminiTabHandler()
-    {
-    }
+    private string _tempImagePath = "";
+    private Texture2D _selectedImageTexture;
+
+    private int _selectedGeminiModelIndex = 0;
+    private string[] _geminiModels = { "gemini-pro", "gemini-pro-vision" };
+
+    private const string GeminiApiKeyPrefKey = "GeminiApiKey";
+    private const string SelectedGeminiModelPrefKey = "SelectedGeminiModel";
+
+    public GeminiTabHandler() { }
 
     public void Initialize(EditorWindow parentWindow)
     {
         _parentWindow = parentWindow as GeminiChatGPTIntegrationEditor;
-
-        if (string.IsNullOrEmpty(scriptFolderPath))
-        {
-            string scriptPath = AssetDatabase.GetAssetPath(MonoScript.FromScriptableObject(parentWindow));
-            scriptFolderPath = Path.GetDirectoryName(scriptPath);
-            apiKeyFilePath = Path.Combine(scriptFolderPath, "gemini_api_key.txt");
-            LoadApiKey();
-        }
-
-        if (geminiMessages.Count == 0)
-        {
-            geminiMessages.Add(new MessageEntry("나: 안녕하세요, 유니티 에디터에서 Gemini 연동 테스트 중입니다.", MessageEntry.MessageType.User));
-            geminiMessages.Add(new MessageEntry("Gemini: 반갑습니다! 어떤 것을 도와드릴까요?", MessageEntry.MessageType.AI));
-        }
+        _apiKey = EditorPrefs.GetString(GeminiApiKeyPrefKey, "");
+        _selectedGeminiModelIndex = EditorPrefs.GetInt(SelectedGeminiModelPrefKey, 0);
+        UpdateApiStatus();
     }
-
-    private void LoadApiKey()
-    {
-        if (File.Exists(apiKeyFilePath))
-        {
-            geminiApiKey = File.ReadAllText(apiKeyFilePath).Trim();
-            isApiKeyApproved = !string.IsNullOrEmpty(geminiApiKey);
-        }
-    }
-
-    private async void SaveApiKeyAndValidate()
-    {
-        if (string.IsNullOrEmpty(geminiApiKey))
-        {
-            EditorUtility.DisplayDialog("경고", "API 키를 입력해주세요.", "확인");
-            return;
-        }
-
-        isApprovingApiKey = true;
-        _parentWindow.Repaint();
-
-        string testUrl = "https://generativelanguage.googleapis.com/v1beta/models?key=" + geminiApiKey.Trim();
-        using (UnityWebRequest request = UnityWebRequest.Get(testUrl))
-        {
-            var operation = request.SendWebRequest();
-            while (!operation.isDone)
-            {
-                await Task.Yield();
-            }
-
-            if (request.result == UnityWebRequest.Result.Success)
-            {
-                File.WriteAllText(apiKeyFilePath, geminiApiKey.Trim());
-                AssetDatabase.Refresh();
-                Debug.Log("Gemini API Key 저장 및 유효성 검사 완료: " + apiKeyFilePath);
-                isApiKeyApproved = true;
-                EditorUtility.DisplayDialog("성공", "API 키가 성공적으로 승인되었습니다.", "확인");
-            }
-            else
-            {
-                isApiKeyApproved = false;
-                string errorMessage = request.responseCode == 401 ?
-                                      "Gemini: 오류 - 올바르지 않은 API 키입니다. 키를 확인하고 다시 시도해주세요." :
-                                      $"Gemini: API 키 유효성 검사 실패 - {request.error} (코드: {request.responseCode})";
-                Debug.LogError(errorMessage + "\n" + request.downloadHandler.text);
-                EditorUtility.DisplayDialog("오류", errorMessage, "확인");
-            }
-        }
-        
-        isApprovingApiKey = false;
-        _parentWindow.Repaint();
-    }
-
 
     public void OnGUI(float editorWindowWidth, float editorWindowHeight)
     {
-        EditorGUILayout.LabelField("✨ Gemini AI와 대화하기", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField("✨ Gemini API 설정", EditorStyles.boldLabel);
         EditorGUILayout.Space();
 
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-        EditorGUILayout.LabelField("🔑 API 설정", EditorStyles.boldLabel);
-
-        if (!isApiKeyApproved)
-        {
-            EditorGUILayout.HelpBox("Gemini API 키가 입력되지 않았거나 유효하지 않습니다. 아래 버튼을 눌러 발급받거나 입력 후 승인해주세요.", MessageType.Warning);
-            if (GUILayout.Button("🚀 Gemini API 키 발급 페이지로 이동", GUILayout.Height(30)))
-            {
-                Application.OpenURL("https://aistudio.google.com/app/apikey");
-            }
-        }
+        EditorGUILayout.LabelField("Google Gemini API Key", EditorStyles.boldLabel);
+        _apiKey = EditorGUILayout.PasswordField("API 키:", _apiKey);
 
         EditorGUILayout.BeginHorizontal();
-        GUI.enabled = !isApiKeyApproved && !isApprovingApiKey;
-        geminiApiKey = EditorGUILayout.TextField("API Key:", geminiApiKey);
-        GUI.enabled = true;
-
-        if (!isApiKeyApproved)
+        if (GUILayout.Button("승인", GUILayout.Height(30)))
         {
-            GUI.enabled = !isApprovingApiKey;
-            if (GUILayout.Button(isApprovingApiKey ? "확인 중..." : "✅ 승인", GUILayout.Width(80), GUILayout.Height(25)))
-            {
-                SaveApiKeyAndValidate();
-            }
-            GUI.enabled = true;
+            EditorPrefs.SetString(GeminiApiKeyPrefKey, _apiKey);
+            UpdateApiStatus();
         }
-        else
+        if (GUILayout.Button("API 키 초기화", GUILayout.Height(30)))
         {
-            if (GUILayout.Button("✏️ 수정", GUILayout.Width(80), GUILayout.Height(25)))
+            _apiKey = "";
+            EditorPrefs.DeleteKey(GeminiApiKeyPrefKey);
+            UpdateApiStatus();
+        }
+        if (GUILayout.Button("API 키 받으러 가기", GUILayout.Height(30)))
+        {
+            Application.OpenURL("https://aistudio.google.com/app/apikey");
+        }
+        EditorGUILayout.EndHorizontal();
+        EditorGUILayout.HelpBox(_apiStatus, IsApiKeyApproved() ? MessageType.Info : MessageType.Warning);
+        EditorGUILayout.EndVertical();
+        EditorGUILayout.Space(10);
+
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+        EditorGUILayout.LabelField("Gemini 모델 선택", EditorStyles.boldLabel);
+        int newGeminiModelIndex = EditorGUILayout.Popup("모델:", _selectedGeminiModelIndex, _geminiModels);
+        if (newGeminiModelIndex != _selectedGeminiModelIndex)
+        {
+            _selectedGeminiModelIndex = newGeminiModelIndex;
+            EditorPrefs.SetInt(SelectedGeminiModelPrefKey, _selectedGeminiModelIndex);
+            _messages.Clear();
+            _inputPrompt = "";
+            _tempImagePath = "";
+            _selectedImageTexture = null;
+        }
+        EditorGUILayout.EndVertical();
+        EditorGUILayout.Space(10);
+
+        // Height for the top fixed sections (API Key, Model Selection, etc.)
+        float topFixedSectionHeight =
+            (EditorGUIUtility.singleLineHeight * 2 + 10) + // API Key section
+            (30 + 10) + // Buttons
+            40 + // HelpBox for API status
+            (EditorGUIUtility.singleLineHeight * 2 + 10) + // Model Selection
+            40; // HelpBox for model selection
+
+        // Height of the image selection UI block
+        float imageUIBlockHeight =
+            25 + // Image file select/remove buttons
+            EditorGUIUtility.singleLineHeight + // HelpBox
+            100 + // Image preview
+            5 + // Space after helpbox
+            5 + // Space after preview
+            10; // Additional padding
+
+        // Height of the "질Questions하기" section content
+        float askQuestionSectionContentHeight =
+            EditorGUIUtility.singleLineHeight + 5 + // "질문하기" label
+            imageUIBlockHeight + // Image UI block
+            60 + // Text area
+            40 + 10; // Buttons + space
+
+        // Total bottom space, increased to prevent clipping
+        float totalGuaranteedBottomSpace = askQuestionSectionContentHeight + 80; // Increased padding
+
+        float chatScrollViewHeight = editorWindowHeight - topFixedSectionHeight - totalGuaranteedBottomSpace;
+
+        if (chatScrollViewHeight < 150)
+        {
+            chatScrollViewHeight = 150;
+        }
+        if (chatScrollViewHeight > 300)
+        {
+            chatScrollViewHeight = 300;
+        }
+
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandWidth(true));
+        EditorGUILayout.LabelField("채팅", EditorStyles.boldLabel);
+
+        _scrollPos = EditorGUILayout.BeginScrollView(_scrollPos, GUILayout.Height(chatScrollViewHeight));
+
+        foreach (var message in _messages)
+        {
+            GUIStyle style = new GUIStyle(EditorStyles.wordWrappedLabel);
+            style.richText = true;
+            if (message.Type == MemoEntry.MessageType.User)
             {
-                isApiKeyApproved = false;
+                style.normal.textColor = Color.white;
+                EditorGUILayout.SelectableLabel($"<b>[나]</b> {message.Content}", style);
+            }
+            else
+            {
+                style.normal.textColor = new Color(0.7f, 0.8f, 1.0f);
+                EditorGUILayout.SelectableLabel($"<b>[Gemini]</b> {message.Content}", style);
+            }
+            EditorGUILayout.Space(5);
+        }
+
+        if (_isSendingRequest)
+        {
+            EditorGUILayout.HelpBox("Gemini 응답 대기 중...", MessageType.Info);
+        }
+
+        EditorGUILayout.EndScrollView();
+        EditorGUILayout.EndVertical();
+        EditorGUILayout.Space(20); // Increased bottom margin
+
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandWidth(true));
+        EditorGUILayout.LabelField("질문하기", EditorStyles.boldLabel);
+
+        // Always show image UI for gemini-pro-vision
+        bool isVisionModel = (_geminiModels[_selectedGeminiModelIndex] == "gemini-pro-vision");
+        EditorGUILayout.BeginHorizontal();
+        if (GUILayout.Button("이미지 파일 선택", GUILayout.Height(25), GUILayout.Width(150)))
+        {
+            string path = EditorUtility.OpenFilePanel("이미지 선택", "", "png,jpg,jpeg");
+            if (!string.IsNullOrEmpty(path))
+            {
+                _tempImagePath = path;
+                LoadImageTexture(_tempImagePath);
+            }
+        }
+        if (_selectedImageTexture != null)
+        {
+            if (GUILayout.Button("이미지 제거", GUILayout.Height(25), GUILayout.Width(80)))
+            {
+                _tempImagePath = "";
+                _selectedImageTexture = null;
             }
         }
         EditorGUILayout.EndHorizontal();
 
-        int currentModelIndex = System.Array.IndexOf(availableGeminiModels, geminiAiVersion);
-        int newModelIndex = EditorGUILayout.Popup("🤖 현재 구동 중인 AI 모델:", currentModelIndex, availableGeminiModels);
-        if (newModelIndex != currentModelIndex)
+        if (_selectedImageTexture != null)
         {
-            geminiAiVersion = availableGeminiModels[newModelIndex];
-            showModelUnavailableWarning = false;
+            EditorGUILayout.HelpBox($"선택된 이미지: {Path.GetFileName(_tempImagePath)}", MessageType.Info);
+            GUILayout.Label(_selectedImageTexture, GUILayout.Width(100), GUILayout.Height(100));
         }
-
-        if (showModelUnavailableWarning)
+        else if (!string.IsNullOrEmpty(_tempImagePath))
         {
-             EditorGUILayout.HelpBox($"⚠️ 현재 선택된 모델 '{geminiAiVersion}'은(는) 사용 불가능합니다. 다른 모델을 시도해보세요.", MessageType.Warning);
+            EditorGUILayout.HelpBox($"선택된 이미지: {Path.GetFileName(_tempImagePath)} (로딩 실패 또는 유효하지 않은 파일)", MessageType.Warning);
         }
-        
-        EditorGUILayout.EndVertical();
-        EditorGUILayout.Space(10);
-
-        EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandHeight(true));
-        EditorGUILayout.LabelField("💬 대화 내용", EditorStyles.boldLabel);
+        else
+        {
+            EditorGUILayout.HelpBox("텍스트와 함께 전송할 이미지를 선택하세요. (선택 사항)", MessageType.Info);
+        }
         EditorGUILayout.Space(5);
 
-        // 스크롤 뷰 시작
-        geminiScrollPos = EditorGUILayout.BeginScrollView(geminiScrollPos, GUILayout.ExpandHeight(true));
-        
-        GUIStyle chatStyle = new GUIStyle(EditorStyles.wordWrappedLabel);
-        chatStyle.normal.textColor = EditorStyles.label.normal.textColor;
-        chatStyle.padding = new RectOffset(5, 5, 5, 5);
-        chatStyle.richText = true;
+        _inputPrompt = EditorGUILayout.TextArea(_inputPrompt, GUILayout.MinHeight(60));
 
-        StringBuilder fullChatContent = new StringBuilder();
-
-        List<MessageEntry> messagesToDisplay = new List<MessageEntry>();
-        if (geminiMessages.Any())
+        EditorGUILayout.BeginHorizontal();
+        bool canSend = IsApiKeyApproved() && !_isSendingRequest;
+        if (isVisionModel)
         {
-            DateTime lastMessageTime = geminiMessages.Last().Timestamp;
-            DateTime oneHourAgo = lastMessageTime.AddHours(-1);
-
-            messagesToDisplay = geminiMessages
-                .Where(entry => entry.Timestamp >= oneHourAgo)
-                .ToList();
+            canSend = canSend && (!string.IsNullOrEmpty(_inputPrompt) || !string.IsNullOrEmpty(_tempImagePath));
+        }
+        else
+        {
+            canSend = canSend && !string.IsNullOrEmpty(_inputPrompt);
         }
 
-        foreach (MessageEntry entry in messagesToDisplay)
+        GUI.enabled = canSend;
+        if (GUILayout.Button("전송", GUILayout.Height(40)))
         {
-            if (entry.Type == MessageEntry.MessageType.User)
-            {
-                fullChatContent.AppendLine($"<color=white><b>나 ({entry.Timestamp:HH:mm:ss}):</b> {entry.Content}</color>\n");
-            }
-            else
-            {
-                fullChatContent.AppendLine($"<color=#ADD8E6><b>Gemini ({entry.Timestamp:HH:mm:ss}):</b> {entry.Content}</color>\n");
-            }
+            SendGeminiQuery(_inputPrompt);
         }
-
-        // 스크롤 가능한 SelectableLabel
-        EditorGUILayout.SelectableLabel(fullChatContent.ToString(), chatStyle, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
-
-        EditorGUILayout.EndScrollView(); // 스크롤 뷰 끝
-        EditorGUILayout.EndVertical();
-        EditorGUILayout.Space(10);
-
-        EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.Height(200)); // 질문 섹션 고정 높이
-        EditorGUILayout.LabelField("✏️ 질문하기", EditorStyles.boldLabel);
-        EditorGUILayout.Space(5);
-
-        if (geminiMessages.Count > 1)
+        GUI.enabled = !_isSendingRequest;
+        if (GUILayout.Button("채팅 초기화", GUILayout.Height(40), GUILayout.Width(100)))
         {
-            EditorGUILayout.LabelField($"가장 최근 질문: {geminiMessages[geminiMessages.Count - 2].Content}", EditorStyles.miniLabel);
-        }
-
-        GUI.enabled = isApiKeyApproved && !isSendingRequest;
-
-        geminiQuery = EditorGUILayout.TextArea(geminiQuery, GUILayout.MinHeight(80)); // 최소 높이 설정
-
-        EditorGUILayout.Space(5);
-
-        if (GUILayout.Button(isSendingRequest ? "⏳ 전송 중..." : "⬆️ 전송", GUILayout.Height(35)))
-        {
-            if (!isApiKeyApproved)
-            {
-                EditorUtility.DisplayDialog("경고", "Gemini API 키가 승인되지 않았습니다. API 키를 입력하고 승인해주세요.", "확인");
-            }
-            else if (string.IsNullOrEmpty(geminiQuery.Trim()))
-            {
-                EditorUtility.DisplayDialog("경고", "질문 내용을 입력해주세요.", "확인");
-            }
-            else if (showModelUnavailableWarning)
-            {
-                 EditorUtility.DisplayDialog("경고", $"현재 선택된 모델 '{geminiAiVersion}'은(는) 사용 불가능합니다. 다른 모델을 시도해보세요.", "확인");
-            }
-            else
-            {
-                SendGeminiQuery(geminiQuery);
-                geminiQuery = "";
-                showServiceSwapWarning = false;
-            }
+            _messages.Clear();
+            _inputPrompt = "";
+            _tempImagePath = "";
+            _selectedImageTexture = null;
         }
         GUI.enabled = true;
-        
-        if (isSendingRequest)
-        {
-            EditorGUILayout.HelpBox("Gemini 응답을 기다리는 중...", MessageType.Info);
-        }
-        else if (isApprovingApiKey)
-        {
-            EditorGUILayout.HelpBox("API 키 유효성 확인 중...", MessageType.Info);
-        }
-        else if (showServiceSwapWarning)
-        {
-            EditorGUILayout.HelpBox("⚠️ 답변이 제대로 오지 않았습니다. 다른 구동 서비스(ChatGPT 탭)로 교체해보세요.", MessageType.Warning);
-        }
+        EditorGUILayout.EndHorizontal();
         EditorGUILayout.EndVertical();
+        EditorGUILayout.Space(20); // Additional bottom margin to prevent clipping
     }
 
-    public async void SendGeminiQuery(string query, bool isFromStatistics = false)
+    private void UpdateApiStatus()
     {
-        if (string.IsNullOrEmpty(query)) return;
-        if (!isApiKeyApproved)
+        if (string.IsNullOrEmpty(_apiKey))
         {
-            if (!isFromStatistics) EditorUtility.DisplayDialog("경고", "API 키를 먼저 승인해주세요.", "확인");
+            _apiStatus = "API 키가 입력되지 않았습니다.";
+        }
+        else
+        {
+            _apiStatus = $"API 키 승인됨. 모델: {_geminiModels[_selectedGeminiModelIndex]}";
+        }
+        _parentWindow?.Repaint();
+    }
+
+    private bool IsApiKeyApproved()
+    {
+        return !string.IsNullOrEmpty(_apiKey);
+    }
+
+    public async void SendGeminiQuery(string prompt)
+    {
+        if (string.IsNullOrEmpty(_apiKey))
+        {
+            EditorUtility.DisplayDialog("경고", "Gemini API 키가 설정되지 않았습니다.", "확인");
             return;
         }
 
-        isSendingRequest = true;
-        showModelUnavailableWarning = false;
-        showServiceSwapWarning = false;
-        _parentWindow.Repaint();
+        bool isVisionModel = (_geminiModels[_selectedGeminiModelIndex] == "gemini-pro-vision");
 
-        geminiMessages.Add(new MessageEntry(query, MessageEntry.MessageType.User));
-        geminiMessages.Add(new MessageEntry("답변 생성 중...", MessageEntry.MessageType.AI));
-        
-        geminiScrollPos.y = float.MaxValue; 
+        if (string.IsNullOrEmpty(prompt) && (_selectedImageTexture == null || !isVisionModel))
+        {
+            EditorUtility.DisplayDialog("경고", "질문 내용을 입력해주세요. (이미지 모델은 이미지도 선택 가능)", "확인");
+            return;
+        }
 
-        string responseText = "오류: 응답을 받지 못했습니다.";
+        if (isVisionModel && string.IsNullOrEmpty(prompt) && _selectedImageTexture == null)
+        {
+            EditorUtility.DisplayDialog("경고", "이미지 모델을 사용하는 경우, 질문 내용이나 이미지를 선택해야 합니다.", "확인");
+            return;
+        }
+
+        if (_parentWindow?.GetStatisticsTabHandler().IsAIAnalysisInProgress() == false)
+        {
+            _messages.Add(new MemoEntry(prompt, MemoEntry.MessageType.User));
+        }
+
+        _isSendingRequest = true;
+        _parentWindow?.Repaint();
+
+        string modelName = _geminiModels[_selectedGeminiModelIndex];
+        string apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/{modelName}:generateContent?key={_apiKey}";
 
         try
         {
-            string url = "https://generativelanguage.googleapis.com/v1beta/models/" + geminiAiVersion + ":generateContent?key=" + geminiApiKey;
-
-            string jsonPayload = "{\"contents\": [{\"parts\": [{\"text\": \"" + EscapeJsonString(query) + "\"}]}]}";
-            byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonPayload);
-
-            using (UnityWebRequest request = new UnityWebRequest(url, "POST"))
+            using (HttpClient client = new HttpClient())
             {
-                request.uploadHandler = new UploadHandlerRaw(bodyRaw);
-                request.downloadHandler = new DownloadHandlerBuffer();
-                request.SetRequestHeader("Content-Type", "application/json");
+                GeminiRequest geminiRequest = new GeminiRequest();
+                geminiRequest.contents = new List<GeminiContent>();
 
-                var operation = request.SendWebRequest();
-                while (!operation.isDone)
+                if (_parentWindow?.GetStatisticsTabHandler().IsAIAnalysisInProgress() == false)
                 {
-                    await Task.Yield();
-                }
-
-                if (request.result == UnityWebRequest.Result.ProtocolError && request.responseCode == 401)
-                {
-                    responseText = "Gemini: 오류 - 올바르지 않은 API 키입니다. 키를 확인하고 다시 시도해주세요.";
-                    Debug.LogError($"Gemini API Key Error: {request.downloadHandler.text}");
-                    isApiKeyApproved = false;
-                    showServiceSwapWarning = true;
-                }
-                else if (request.result == UnityWebRequest.Result.ProtocolError && request.responseCode == 404)
-                {
-                    responseText = $"Gemini: 오류 - 모델 '{geminiAiVersion}'을(를) 찾을 수 없거나 지원되지 않습니다. 다른 모델을 선택해주세요.";
-                    Debug.LogError(responseText + "\n" + request.downloadHandler.text);
-                    showModelUnavailableWarning = true;
-                    showServiceSwapWarning = true;
-                }
-                else if (request.result == UnityWebRequest.Result.Success)
-                {
-                    string jsonResponse = request.downloadHandler.text;
-                    GeminiResponse geminiResponse = JsonUtility.FromJson<GeminiResponse>(jsonResponse);
-
-                    if (geminiResponse != null && geminiResponse.candidates != null && geminiResponse.candidates.Length > 0 &&
-                        geminiResponse.candidates[0].content != null && geminiResponse.candidates[0].content.parts != null &&
-                        geminiResponse.candidates[0].content.parts.Length > 0)
+                    foreach (var msg in _messages.Where(m => m.Type == MemoEntry.MessageType.User || m.Type == MemoEntry.MessageType.AI))
                     {
-                        responseText = geminiResponse.candidates[0].content.parts[0].text.Trim();
-                        showModelUnavailableWarning = false;
-                        showServiceSwapWarning = false;
+                        geminiRequest.contents.Add(new GeminiContent
+                        {
+                            role = msg.Type == MemoEntry.MessageType.User ? "user" : "model",
+                            parts = new List<GeminiPart> { new GeminiPart { text = msg.Content } }
+                        });
                     }
-                    else if (geminiResponse != null && geminiResponse.promptFeedback != null && geminiResponse.promptFeedback.blockReason != null)
+                }
+
+                List<GeminiPart> currentParts = new List<GeminiPart>();
+                if (!string.IsNullOrEmpty(prompt))
+                {
+                    currentParts.Add(new GeminiPart { text = prompt });
+                }
+
+                if (isVisionModel && _selectedImageTexture != null)
+                {
+                    byte[] imageBytes = File.ReadAllBytes(_tempImagePath);
+                    string base64Image = Convert.ToBase64String(imageBytes);
+                    currentParts.Add(new GeminiPart { inline_data = new GeminiInlineData { mime_type = GetMimeType(_tempImagePath), data = base64Image } });
+                }
+
+                geminiRequest.contents.Add(new GeminiContent { role = "user", parts = currentParts });
+
+                string jsonPayload = JsonUtility.ToJson(geminiRequest);
+                StringContent content = new StringContent(jsonPayload, System.Text.Encoding.UTF8, "application/json");
+
+                HttpResponseMessage response = await client.PostAsync(apiUrl, content);
+                string responseBody = await response.Content.ReadAsStringAsync();
+
+                if (response.IsSuccessStatusCode)
+                {
+                    GeminiResponse geminiResponse = JsonUtility.FromJson<GeminiResponse>(responseBody);
+                    if (geminiResponse != null && geminiResponse.candidates != null && geminiResponse.candidates.Length > 0 && geminiResponse.candidates[0].content.parts != null && geminiResponse.candidates[0].content.parts.Count > 0)
                     {
-                        responseText = $"Gemini: 응답이 차단되었습니다. 이유: {geminiResponse.promptFeedback.blockReason}";
-                        Debug.LogWarning(responseText);
-                        showServiceSwapWarning = true;
-                    }
-                    else if (geminiResponse != null && geminiResponse.error != null)
-                    {
-                        responseText = $"Gemini: 오류 - {geminiResponse.error.message}";
-                        Debug.LogError(responseText);
-                        showServiceSwapWarning = true;
+                        string aiResponse = geminiResponse.candidates[0].content.parts[0].text;
+                        _messages.Add(new MemoEntry(aiResponse, MemoEntry.MessageType.AI));
+                        _parentWindow.GetQuestionListTabHandler().AddQuestion(prompt, aiResponse, AiServiceType.Gemini);
+                        _parentWindow.GetStatisticsTabHandler().RecordKeyword(prompt);
+                        _parentWindow.GetStatisticsTabHandler().RecordKeyword(aiResponse);
                     }
                     else
                     {
-                        responseText = "오류: Gemini 응답 파싱 실패. 원본: " + jsonResponse;
-                        Debug.LogError(responseText);
-                        showServiceSwapWarning = true;
+                        string errorMessage = $"Gemini 응답에 오류가 있습니다. 응답: {responseBody}";
+                        Debug.LogError(errorMessage);
+                        if (_messages.Any() && _messages[_messages.Count - 1].Content == "응답 대기 중...")
+                        {
+                            _messages[_messages.Count - 1].Content = errorMessage;
+                            _messages[_messages.Count - 1].Timestamp = DateTime.Now;
+                        }
+                        else
+                        {
+                            _messages.Add(new MemoEntry(errorMessage, MemoEntry.MessageType.Error));
+                        }
                     }
                 }
                 else
                 {
-                    responseText = $"오류: {request.error} - {request.downloadHandler.text}";
-                    Debug.LogError(responseText);
-                    showServiceSwapWarning = true;
-                }
-            }
-        }
-        catch (System.Exception e)
-        {
-            responseText = "예외 발생: " + e.Message;
-            Debug.LogError(responseText);
-            showServiceSwapWarning = true;
-        }
-        finally
-        {
-            if (geminiMessages.Count > 0 && geminiMessages[geminiMessages.Count - 1].Content == "답변 생성 중...")
-            {
-                geminiMessages[geminiMessages.Count - 1].Content = responseText;
-                geminiMessages[geminiMessages.Count - 1].Timestamp = DateTime.Now;
-            }
-            else
-            {
-                geminiMessages.Add(new MessageEntry(responseText, MessageEntry.MessageType.AI));
-            }
-
-            GeminiChatGPTIntegrationEditor editorWindow = _parentWindow;
-            if (editorWindow != null)
-            {
-                QuestionListTabHandler questionListHandler = editorWindow.GetQuestionListTabHandler();
-                if (questionListHandler != null)
-                {
-                    questionListHandler.AddQuestion(query, responseText, AiServiceType.Gemini);
-                    if (!isFromStatistics)
+                    string errorMessage = $"Gemini API 요청 실패: {response.StatusCode} - {responseBody}";
+                    Debug.LogError(errorMessage);
+                    if (_messages.Any() && _messages[_messages.Count - 1].Content == "응답 대기 중...")
                     {
-                         StatisticsTabHandler statsHandler = editorWindow.GetStatisticsTabHandler();
-                         if (statsHandler != null)
-                         {
-                             statsHandler.RecordKeyword(query);
-                         }
+                        _messages[_messages.Count - 1].Content = errorMessage;
+                        _messages[_messages.Count - 1].Timestamp = DateTime.Now;
+                    }
+                    else
+                    {
+                        _messages.Add(new MemoEntry(errorMessage, MemoEntry.MessageType.Error));
                     }
                 }
             }
-
-            isSendingRequest = false;
-            geminiScrollPos.y = float.MaxValue;
-            _parentWindow.Repaint();
         }
-    }
-
-    private string EscapeJsonString(string rawString)
-    {
-        if (string.IsNullOrEmpty(rawString))
+        catch (HttpRequestException e)
         {
-            return "";
+            string errorMessage = $"네트워크 오류 또는 API 통신 문제: {e.Message}";
+            Debug.LogError(errorMessage);
+            if (_messages.Any() && _messages[_messages.Count - 1].Content == "응답 대기 중...")
+            {
+                _messages[_messages.Count - 1].Content = errorMessage;
+                _messages[_messages.Count - 1].Timestamp = DateTime.Now;
+            }
+            else
+            {
+                _messages.Add(new MemoEntry(errorMessage, MemoEntry.MessageType.Error));
+            }
         }
-        return rawString.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
+        catch (Exception e)
+        {
+            string errorMessage = $"예상치 못한 오류 발생: {e.Message}";
+            Debug.LogError(errorMessage);
+            if (_messages.Any() && _messages[_messages.Count - 1].Content == "응답 대기 중...")
+            {
+                _messages[_messages.Count - 1].Content = errorMessage;
+                _messages[_messages.Count - 1].Timestamp = DateTime.Now;
+            }
+            else
+            {
+                _messages.Add(new MemoEntry(errorMessage, MemoEntry.MessageType.Error));
+            }
+        }
+        finally
+        {
+            _inputPrompt = "";
+            _tempImagePath = "";
+            _selectedImageTexture = null;
+            _isSendingRequest = false;
+            _parentWindow?.Repaint();
+            _scrollPos.y = Mathf.Infinity;
+            if (_parentWindow?.GetStatisticsTabHandler().IsAIAnalysisInProgress() == true)
+            {
+                _parentWindow.GetStatisticsTabHandler().SetAIAnalysisInProgress(false);
+            }
+        }
     }
 
-    [System.Serializable]
-    private class GeminiResponse
+    private void LoadImageTexture(string path)
     {
-        public Candidate[] candidates;
-        public PromptFeedback promptFeedback;
-        public Error error;
+        if (File.Exists(path))
+        {
+            byte[] fileData = File.ReadAllBytes(path);
+            _selectedImageTexture = new Texture2D(2, 2);
+            _selectedImageTexture.LoadImage(fileData);
+        }
+        else
+        {
+            _selectedImageTexture = null;
+            Debug.LogError("Failed to load image: " + path);
+        }
     }
 
-    [System.Serializable]
-    private class Candidate
+    private string GetMimeType(string filePath)
     {
-        public Content content;
+        string extension = Path.GetExtension(filePath).ToLower();
+        switch (extension)
+        {
+            case ".png": return "image/png";
+            case ".jpg":
+            case ".jpeg": return "image/jpeg";
+            case ".gif": return "image/gif";
+            case ".webp": return "image/webp";
+            default: return "application/octet-stream";
+        }
     }
 
     [System.Serializable]
-    private class Content
+    public class GeminiRequest
     {
-        public Part[] parts;
+        public List<GeminiContent> contents;
     }
 
     [System.Serializable]
-    private class Part
+    public class GeminiContent
+    {
+        public string role;
+        public List<GeminiPart> parts;
+    }
+
+    [System.Serializable]
+    public class GeminiPart
     {
         public string text;
+        public GeminiInlineData inline_data;
     }
 
     [System.Serializable]
-    private class PromptFeedback
+    public class GeminiInlineData
     {
-        public string blockReason;
+        public string mime_type;
+        public string data;
     }
 
     [System.Serializable]
-    private class Error
+    public class GeminiResponse
     {
-        public int code;
-        public string message;
-        public string status;
+        public GeminiCandidate[] candidates;
     }
 
     [System.Serializable]
-    public class MessageEntry
+    public class GeminiCandidate
     {
-        public string Content;
-        public MessageType Type;
-        public DateTime Timestamp;
-
-        public enum MessageType { User, AI }
-
-        public MessageEntry(string content, MessageType type)
-        {
-            Content = content;
-            Type = type;
-            Timestamp = DateTime.Now;
-        }
+        public GeminiContent content;
+        public string finishReason;
+        public int index;
     }
-
-    public bool IsApiKeyApproved() => isApiKeyApproved;
-    public bool IsModelUnavailable() => showModelUnavailableWarning;
-    public bool IsSendingRequest() => isSendingRequest;
 }

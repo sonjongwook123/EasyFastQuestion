@@ -1,151 +1,127 @@
 ﻿using UnityEditor;
 using UnityEngine;
 using System.IO;
-using System.Linq;
 
 public class GeminiChatGPTIntegrationEditor : EditorWindow
 {
+    private int _selectedTab = 0;
+    private string[] _tabNames = { "Gemini", "ChatGPT", "질문 리스트", "통계 분석" };
+
     private GeminiTabHandler _geminiTabHandler;
     private ChatGPTTabHandler _chatGPTTabHandler;
     private QuestionListTabHandler _questionListTabHandler;
     private StatisticsTabHandler _statisticsTabHandler;
 
-    private int _selectedTabIndex = 0;
-    private string[] _tabNames = { "Gemini AI", "ChatGPT AI", "질문 리스트", "통계" };
+    private Texture2D _bannerImage;
 
-    private Texture2D _bannerTexture;
-
-    [MenuItem("Tools/Easy Fast AI Question")]
+    [MenuItem("Window/AI/Gemini & ChatGPT Integration")]
     public static void ShowWindow()
     {
-        GetWindow<GeminiChatGPTIntegrationEditor>("AI Code Generator");
+        GetWindow<GeminiChatGPTIntegrationEditor>("AI 통합 도구");
     }
 
     private void OnEnable()
     {
-        string scriptPath = AssetDatabase.GetAssetPath(MonoScript.FromScriptableObject(this));
-        string scriptDirectory = Path.GetDirectoryName(scriptPath);
-        string bannerPath = Path.Combine(scriptDirectory, "banner.png");
+        _geminiTabHandler = new GeminiTabHandler();
+        _geminiTabHandler.Initialize(this);
 
-        if (File.Exists(bannerPath))
+        _chatGPTTabHandler = new ChatGPTTabHandler();
+        _chatGPTTabHandler.Initialize(this);
+
+        _questionListTabHandler = new QuestionListTabHandler();
+        _questionListTabHandler.Initialize(this);
+
+        _statisticsTabHandler = new StatisticsTabHandler();
+        _statisticsTabHandler.Initialize(this);
+
+        LoadBannerImage();
+    }
+
+    private void LoadBannerImage()
+    {
+        string[] guids = AssetDatabase.FindAssets("t:Script " + typeof(GeminiChatGPTIntegrationEditor).Name);
+        if (guids.Length > 0)
         {
-            byte[] fileData = File.ReadAllBytes(bannerPath);
-            _bannerTexture = new Texture2D(2, 2);
-            _bannerTexture.LoadImage(fileData);
+            string scriptPath = AssetDatabase.GUIDToAssetPath(guids[0]);
+            string scriptFolderPath = Path.GetDirectoryName(scriptPath);
+            string bannerPath = Path.Combine(scriptFolderPath, "ai_banner.png");
+            if (File.Exists(bannerPath))
+            {
+                byte[] fileData = File.ReadAllBytes(bannerPath);
+                _bannerImage = new Texture2D(2, 2);
+                _bannerImage.LoadImage(fileData);
+            }
+            else
+            {
+                Debug.LogWarning("ai_banner.png 이미지를 찾을 수 없습니다: " + bannerPath);
+            }
         }
         else
         {
-            Debug.LogWarning($"배너 이미지(banner.png)를 다음 경로에서 찾을 수 없습니다: {bannerPath}");
-            _bannerTexture = null;
+            Debug.LogWarning("GeminiChatGPTIntegrationEditor.cs 스크립트를 찾을 수 없습니다. 배너 이미지 로드 실패.");
         }
-
-        if (_geminiTabHandler == null)
-        {
-            _geminiTabHandler = new GeminiTabHandler();
-        }
-        _geminiTabHandler.Initialize(this);
-
-        if (_chatGPTTabHandler == null)
-        {
-            _chatGPTTabHandler = new ChatGPTTabHandler();
-        }
-        _chatGPTTabHandler.Initialize(this);
-
-        if (_questionListTabHandler == null)
-        {
-            _questionListTabHandler = new QuestionListTabHandler();
-        }
-        _questionListTabHandler.Initialize(this);
-
-        if (_statisticsTabHandler == null)
-        {
-            _statisticsTabHandler = new StatisticsTabHandler();
-        }
-        _statisticsTabHandler.Initialize(this);
     }
-    
+
+    void OnGUI()
+    {
+        if (_bannerImage != null)
+        {
+            float bannerWidth = position.width * 0.9f;
+            float bannerHeight = bannerWidth / _bannerImage.width * _bannerImage.height;
+            if (bannerHeight > 150) bannerHeight = 150; // 최대 높이 제한
+            if (bannerWidth > 800) bannerWidth = 800; // 최대 너비 제한
+
+            GUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+            GUILayout.Label(_bannerImage, GUILayout.Width(bannerWidth), GUILayout.Height(bannerHeight));
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+            EditorGUILayout.Space(10);
+        }
+
+        int newSelectedTab = GUILayout.Toolbar(_selectedTab, _tabNames);
+        if (newSelectedTab != _selectedTab)
+        {
+            _selectedTab = newSelectedTab;
+            Repaint();
+        }
+
+        EditorGUILayout.Space(10);
+
+        switch (_selectedTab)
+        {
+            case 0:
+                _geminiTabHandler.OnGUI(position.width, position.height);
+                break;
+            case 1:
+                _chatGPTTabHandler.OnGUI(position.width, position.height);
+                break;
+            case 2:
+                _questionListTabHandler.OnGUI(position.width, position.height);
+                break;
+            case 3:
+                _statisticsTabHandler.OnGUI(position.width, position.height);
+                break;
+        }
+    }
+
     public QuestionListTabHandler GetQuestionListTabHandler()
     {
-        if (_questionListTabHandler == null)
-        {
-            _questionListTabHandler = new QuestionListTabHandler();
-            _questionListTabHandler.Initialize(this);
-        }
         return _questionListTabHandler;
     }
 
     public StatisticsTabHandler GetStatisticsTabHandler()
     {
-        if (_statisticsTabHandler == null)
-        {
-            _statisticsTabHandler = new StatisticsTabHandler();
-            _statisticsTabHandler.Initialize(this);
-        }
         return _statisticsTabHandler;
-    }
-
-    public GeminiTabHandler GetGeminiTabHandler()
-    {
-        if (_geminiTabHandler == null)
-            _geminiTabHandler = new GeminiTabHandler();
-        return _geminiTabHandler;
     }
 
     public ChatGPTTabHandler GetChatGPTTabHandler()
     {
-        if (_chatGPTTabHandler == null)
-            _chatGPTTabHandler = new ChatGPTTabHandler();
         return _chatGPTTabHandler;
     }
 
-    private void OnGUI()
+    public GeminiTabHandler GetGeminiTabHandler()
     {
-        if (_bannerTexture != null)
-        {
-            Rect bannerRect = new Rect(0, 0, position.width, 100);
-            GUI.DrawTexture(bannerRect, _bannerTexture, ScaleMode.ScaleToFit);
-            EditorGUILayout.Space(105);
-        }
-        else
-        {
-            EditorGUILayout.Space(10);
-        }
-
-        int prevSelectedTabIndex = _selectedTabIndex;
-        _selectedTabIndex = GUILayout.Toolbar(_selectedTabIndex, _tabNames);
-
-        if (prevSelectedTabIndex != _selectedTabIndex)
-        {
-            Debug.Log($"탭 활성화: {_tabNames[_selectedTabIndex]}");
-            if (_selectedTabIndex == 2) // 질문 리스트 탭으로 이동 시
-            {
-                _questionListTabHandler?.LoadHistory();
-            }
-            if (_selectedTabIndex == 3) // 통계 탭으로 이동 시
-            {
-                _statisticsTabHandler?.LoadKeywordsAndRefresh();
-            }
-        }
-
-        EditorGUILayout.Space(10);
-
-        float editorWindowWidth = position.width;
-        float editorWindowHeight = position.height;
-
-        switch (_selectedTabIndex)
-        {
-            case 0: // Gemini AI 탭
-                _geminiTabHandler?.OnGUI(editorWindowWidth, editorWindowHeight);
-                break;
-            case 1: // ChatGPT AI 탭
-                _chatGPTTabHandler?.OnGUI(editorWindowWidth, editorWindowHeight);
-                break;
-            case 2: // 질문 리스트 탭
-                _questionListTabHandler?.OnGUI(editorWindowWidth, editorWindowHeight);
-                break;
-            case 3: // 통계 탭
-                _statisticsTabHandler?.OnGUI(editorWindowWidth, editorWindowHeight);
-                break;
-        }
+        return _geminiTabHandler;
     }
 }
