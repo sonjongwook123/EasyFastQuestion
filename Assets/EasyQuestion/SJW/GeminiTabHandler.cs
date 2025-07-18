@@ -166,6 +166,7 @@ public class GeminiTabHandler
         EditorGUILayout.LabelField("💬 대화 내용", EditorStyles.boldLabel);
         EditorGUILayout.Space(5);
 
+        // 스크롤 뷰 시작
         geminiScrollPos = EditorGUILayout.BeginScrollView(geminiScrollPos, GUILayout.ExpandHeight(true));
         
         GUIStyle chatStyle = new GUIStyle(EditorStyles.wordWrappedLabel);
@@ -198,10 +199,10 @@ public class GeminiTabHandler
             }
         }
 
-        // ⭐ 이 줄에 GUILayout.ExpandHeight(true) 추가
+        // 스크롤 가능한 SelectableLabel
         EditorGUILayout.SelectableLabel(fullChatContent.ToString(), chatStyle, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
 
-        EditorGUILayout.EndScrollView();
+        EditorGUILayout.EndScrollView(); // 스크롤 뷰 끝
         EditorGUILayout.EndVertical();
         EditorGUILayout.Space(10);
 

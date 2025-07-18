@@ -117,6 +117,7 @@ public class StatisticsTabHandler
             .Where(entry => entry.Timestamp >= sevenDaysAgo)
             .ToList();
 
+        // 조건 변경: recentKeywords가 비어있지 않으면 Top Keywords를 표시합니다.
         if (recentKeywords.Any())
         {
             var topKeywords = recentKeywords
@@ -126,7 +127,7 @@ public class StatisticsTabHandler
                 .Take(20)
                 .ToList();
 
-            if (topKeywords.Any())
+            if (topKeywords.Any()) // topKeywords가 실제로 존재하는지 다시 확인 (Take(20)으로 인해 없을 수도 있음)
             {
                 for (int i = 0; i < topKeywords.Count; i += 5)
                 {
@@ -166,6 +167,7 @@ public class StatisticsTabHandler
             .OrderBy(group => group.Key)
             .ToDictionary(group => group.Key, group => group.Count());
 
+        // 조건 변경: dailyKeywordCounts가 비어있지 않으면 그래프를 표시합니다.
         if (dailyKeywordCounts.Any())
         {
             int maxCount = dailyKeywordCounts.Values.Any() ? dailyKeywordCounts.Values.Max() : 1;
@@ -200,6 +202,8 @@ public class StatisticsTabHandler
         EditorGUILayout.HelpBox("가장 많이 검색한 키워드들을 기반으로 AI에게 취약한 부분에 대한 분석을 요청합니다.", MessageType.Info);
 
         EditorGUILayout.BeginHorizontal();
+        // 분석 버튼은 키워드가 하나라도 있으면 활성화됩니다.
+        GUI.enabled = _keywordHistory.Any(); 
         if (GUILayout.Button("Gemini로 분석", GUILayout.Height(35)))
         {
             AnalyzeKeywordsWithAI(AiServiceType.Gemini);
@@ -208,6 +212,7 @@ public class StatisticsTabHandler
         {
             AnalyzeKeywordsWithAI(AiServiceType.ChatGPT);
         }
+        GUI.enabled = true; // GUI 활성화 상태 복원
         EditorGUILayout.EndHorizontal();
         EditorGUILayout.EndVertical();
         EditorGUILayout.Space(10);
@@ -236,6 +241,7 @@ public class StatisticsTabHandler
             .Take(5)
             .ToList();
 
+        // 키워드 데이터가 없을 때도 분석 요청 버튼은 표시되지만, 실제 요청 시 경고를 띄웁니다.
         if (!top5Keywords.Any())
         {
             EditorUtility.DisplayDialog("경고", "분석할 키워드 데이터가 충분하지 않습니다. 먼저 질문을 하여 키워드를 쌓아주세요.", "확인");

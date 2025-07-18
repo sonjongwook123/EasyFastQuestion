@@ -15,7 +15,7 @@ public class GeminiChatGPTIntegrationEditor : EditorWindow
 
     private Texture2D _bannerTexture;
 
-    [MenuItem("Window/Easy Question/AI Code Generator")]
+    [MenuItem("Tools/Easy Fast AI Question")]
     public static void ShowWindow()
     {
         GetWindow<GeminiChatGPTIntegrationEditor>("AI Code Generator");

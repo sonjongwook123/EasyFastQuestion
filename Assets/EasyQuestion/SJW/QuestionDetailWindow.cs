@@ -41,13 +41,15 @@ public class QuestionDetailWindow : EditorWindow
         EditorGUILayout.LabelField("질문 상세 정보", EditorStyles.boldLabel);
         EditorGUILayout.Space();
 
+        // 질문 및 답변 섹션
         EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandHeight(true));
-        _questionAnswerScrollPos = EditorGUILayout.BeginScrollView(_questionAnswerScrollPos, GUILayout.ExpandHeight(true));
-
+        
         EditorGUILayout.LabelField($"시간: {_currentEntry.Timestamp}", EditorStyles.miniLabel);
         EditorGUILayout.LabelField($"AI 서비스: {_currentEntry.AiType}", EditorStyles.miniLabel);
         EditorGUILayout.LabelField($"중요: {(_currentEntry.IsImportant ? "⭐ 예" : "아니오")}", EditorStyles.miniLabel);
         EditorGUILayout.Space(5);
+
+        _questionAnswerScrollPos = EditorGUILayout.BeginScrollView(_questionAnswerScrollPos, GUILayout.ExpandHeight(true));
 
         GUIStyle combinedTextStyle = new GUIStyle(EditorStyles.wordWrappedLabel);
         combinedTextStyle.normal.textColor = EditorStyles.label.normal.textColor;
@@ -104,7 +106,7 @@ public class QuestionDetailWindow : EditorWindow
                     {
                         _currentEntry.Memos.RemoveAt(originalIndex);
                         _parentHandler.UpdateQuestionEntry(_currentEntry);
-                        // 메모 삭제 후, 현재 페이지가 비어질 경우 (마지막 메모 삭제 등) 이전 페이지로 이동
+                        // 메모 삭제 후, 현재 페이지의 메모가 모두 삭제되면 이전 페이지로 이동
                         if (displayedMemos.Count == 1 && _currentMemoPage > 0 && (_currentEntry.Memos.Count % MemosPerPage == 0))
                         {
                             _currentMemoPage--;
