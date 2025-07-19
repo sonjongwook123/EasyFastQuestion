@@ -3,9 +3,8 @@
 
 
 *Auto Folder&File System 은 Unity 프로젝트 내에서 애셋 관리를 간소화하도록 설계된 직관적인 Unity 에디터 확장 도구입니다.
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/790284dc-d842-47fe-92e4-4e4877f73dfe" />
 
-<img width="312" height="747" alt="image" src="https://github.com/user-attachments/assets/eca9b2dd-3834-4840-8efa-61e3e4c61164" />
-<img width="317" height="755" alt="image" src="https://github.com/user-attachments/assets/b9fa458a-1ac2-4d4e-91cf-f77cfd9af145" />
 
 
 ## 주요 기능
