@@ -14,10 +14,10 @@ public class GeminiChatGPTIntegrationEditor : EditorWindow
 
     private Texture2D _bannerImage;
 
-    [MenuItem("Tools/Gemini & ChatGPT Integration")]
+    [MenuItem("Tools/Easy & Fast AI Question")]
     public static void ShowWindow()
     {
-        GetWindow<GeminiChatGPTIntegrationEditor>("AI 통합 도구");
+        GetWindow<GeminiChatGPTIntegrationEditor>("Easy & Fast AI Question by.SJW .v.1.0");
     }
 
     private void OnEnable()
