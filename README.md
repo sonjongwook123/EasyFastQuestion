@@ -42,7 +42,7 @@
 * 이 프로젝트의 모든 C# 파일을 Unity 프로젝트의 Assets/Editor 폴더 (또는 Editor 스크립트가 인식되는 다른 폴더)에 추가합니다.
 
 ## 2. 툴 열기 (Opening the Tool)
-Unity Editor 상단 메뉴에서 Tools(도구) > Easy & Fast AI Question 을 클릭하여 툴 창을 엽니다.
+* Unity Editor 상단 메뉴에서 Tools(도구) > Easy & Fast AI Question 을 클릭하여 툴 창을 엽니다.
 
 ## 3. API 키 설정 (Setting Up API Keys)
 * 툴 창에서 "Gemini" 또는 "ChatGPT" 탭을 선택합니다.
