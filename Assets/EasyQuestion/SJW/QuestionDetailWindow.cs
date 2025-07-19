@@ -3,6 +3,7 @@ using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
 using System;
+using System.Text;
 
 public class QuestionDetailWindow : EditorWindow
 {
@@ -11,7 +12,9 @@ public class QuestionDetailWindow : EditorWindow
     private GeminiChatGPTIntegrationEditor _parentEditorWindow;
 
     private Vector2 _memoScrollPos;
+    private Vector2 _chatHistoryScrollPos; // New scroll position for chat history
     private string _newMemoText = "";
+    private string _chatHistoryText = ""; // New field for combined chat history
 
     private const int MemosPerPage = 3;
     private int _currentMemoPage = 0;
@@ -23,8 +26,18 @@ public class QuestionDetailWindow : EditorWindow
         window._questionListHandler = handler;
         window._parentEditorWindow = parentEditor;
         window._currentMemoPage = 0;
+        window.UpdateChatHistoryText(); // Initialize chat history text
         window.ShowUtility();
         window.Focus();
+    }
+
+    private void UpdateChatHistoryText()
+    {
+        StringBuilder chatText = new StringBuilder();
+        chatText.AppendLine($"<color=#3366FF><b>[나]</b></color> {_currentEntry.Question}");
+        chatText.AppendLine();
+        chatText.AppendLine($"<color=#008000><b>[{_currentEntry.ServiceType}]</b></color> {_currentEntry.Answer}");
+        _chatHistoryText = chatText.ToString();
     }
 
     private void OnGUI()
@@ -39,13 +52,13 @@ public class QuestionDetailWindow : EditorWindow
         EditorGUILayout.Space();
 
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-
-        EditorGUILayout.SelectableLabel($"질문 ({_currentEntry.Timestamp:yyyy-MM-dd HH:mm:ss} - {_currentEntry.ServiceType}):", EditorStyles.boldLabel);
-        EditorGUILayout.SelectableLabel(_currentEntry.Question, EditorStyles.wordWrappedLabel, GUILayout.MinHeight(50));
-        EditorGUILayout.Space(5);
-
-        EditorGUILayout.SelectableLabel("답변:", EditorStyles.boldLabel);
-        EditorGUILayout.SelectableLabel(_currentEntry.Answer, EditorStyles.wordWrappedLabel, GUILayout.MinHeight(100));
+        EditorGUILayout.LabelField("대화 내역", EditorStyles.boldLabel);
+        _chatHistoryScrollPos = EditorGUILayout.BeginScrollView(_chatHistoryScrollPos, GUILayout.MinHeight(450));
+        GUIStyle chatStyle = new GUIStyle(EditorStyles.textArea);
+        chatStyle.richText = true;
+        float textHeight = chatStyle.CalcHeight(new GUIContent(_chatHistoryText), position.width - 40);
+        EditorGUILayout.SelectableLabel(_chatHistoryText, chatStyle, GUILayout.Height(textHeight));
+        EditorGUILayout.EndScrollView();
         EditorGUILayout.Space(10);
 
         bool newIsImportant = EditorGUILayout.ToggleLeft("중요 표시:", _currentEntry.IsImportant, GUILayout.ExpandWidth(true));
@@ -123,7 +136,7 @@ public class QuestionDetailWindow : EditorWindow
                 _parentEditorWindow.Repaint();
                 this.Repaint();
                 _currentMemoPage = (totalMemos + 1 + MemosPerPage - 1) / MemosPerPage - 1;
-                GUIUtility.ExitGUI(); // Repaint 루프 탈출 방지
+                GUIUtility.ExitGUI();
             }
             else
             {

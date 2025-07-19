@@ -131,14 +131,19 @@ public class GeminiTabHandler
 
         float chatScrollViewHeight = editorWindowHeight - topFixedSectionHeight - totalGuaranteedBottomSpace;
 
-        if (chatScrollViewHeight < 150)
+        // --- 변경된 부분 시작 ---
+        float minChatViewHeight = 150f; 
+        float maxChatViewHeight = editorWindowHeight * 0.4f;
+
+        if (chatScrollViewHeight < minChatViewHeight)
         {
-            chatScrollViewHeight = 150;
+            chatScrollViewHeight = minChatViewHeight;
         }
-        if (chatScrollViewHeight > 300)
+        if (chatScrollViewHeight > maxChatViewHeight)
         {
-            chatScrollViewHeight = 300;
+            chatScrollViewHeight = maxChatViewHeight;
         }
+        // --- 변경된 부분 끝 ---
 
         EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandWidth(true));
         EditorGUILayout.LabelField("채팅", EditorStyles.boldLabel);
@@ -146,7 +151,15 @@ public class GeminiTabHandler
         _scrollPos = EditorGUILayout.BeginScrollView(_scrollPos, GUILayout.Height(chatScrollViewHeight));
         GUIStyle chatStyle = new GUIStyle(EditorStyles.textArea);
         chatStyle.richText = true;
-        EditorGUILayout.SelectableLabel(_chatDisplayText, chatStyle, GUILayout.ExpandHeight(true)); // Use SelectableLabel for consistency
+        
+        // --- 변경된 부분 시작 ---
+        // _chatDisplayText의 실제 높이를 대략적으로 계산합니다.
+        // 스크롤뷰 내의 너비를 고려하여 계산합니다. (약간의 패딩 제외)
+        //float estimatedTextHeight = chatStyle.CalcHeight(new GUIContent(_chatDisplayText), editorWindowWidth - 60); 
+        EditorGUILayout.SelectableLabel(_chatDisplayText, chatStyle, GUILayout.MinHeight(450));
+        // GUILayout.ExpandHeight(true)는 제거합니다.
+        // --- 변경된 부분 끝 ---
+
         EditorGUILayout.EndScrollView();
 
         if (_isSendingRequest)
@@ -226,6 +239,7 @@ public class GeminiTabHandler
         }
         _chatDisplayText = chatText.ToString();
         _parentWindow?.Repaint();
+        _scrollPos.y = Mathf.Infinity; // Ensure scroll to bottom after updating display
     }
 
     private bool IsApiKeyApproved()

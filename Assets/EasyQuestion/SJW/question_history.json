@@ -1,39 +1,15 @@
 {
     "Questions": [
         {
-            "Question": "ㅈㅁㄴ",
-            "Answer": "That's Korean.  Without more context, it's impossible to know what it means.  It could be an abbreviation, initials, or a part of a word.  Do you have any more information?\n",
+            "Question": "유니티 10미터 앞으로 가는 코드 알려줘",
+            "Answer": "유니티에서 10미터 앞으로 이동하는 코드는 여러 가지 방법으로 구현할 수 있습니다.  어떤 방식으로 이동시키고 싶은지에 따라 코드가 달라집니다.  가장 일반적인 세 가지 방법과 각각에 대한 코드 예시를 보여드리겠습니다.\n\n**방법 1: Transform.Translate 사용 (가장 간단)**\n\n이 방법은 현재 객체의 로컬 Z 축 방향으로 10미터 이동합니다.  객체의 회전에 영향을 받습니다.  즉, 객체가 회전되어 있다면 회전된 방향으로 10미터 이동합니다.\n\n```C#\nusing UnityEngine;\n\npublic class MoveForward : MonoBehaviour\n{\n    public float speed = 10f; // 이동 속도 (10m/s)\n\n    void Update()\n    {\n        transform.Translate(Vector3.forward * speed * Time.deltaTime);\n    }\n}\n```\n\n`Time.deltaTime`을 곱하는 이유는 프레임 레이트에 상관없이 일정한 속도로 이동하게 하기 위해서입니다.  `speed` 값을 조절하여 이동 속도를 바꿀 수 있습니다.  1초에 10미터 이동하려면 `speed = 10f` 로 설정합니다.  1초에 1미터 이동하려면 `speed = 1f` 로 설정합니다.\n\n\n**방법 2: Rigidbody.MovePosition 사용 (물리 엔진 사용)**\n\n이 방법은 Rigidbody 컴포넌트를 사용하여 물리적으로 이동합니다.  물리 엔진의 영향을 받으므로 더욱 현실적인 이동을 구현할 수 있습니다.\n\n```C#\nusing UnityEngine;\n\npublic class MoveForwardRigidbody : MonoBehaviour\n{\n    public float speed = 10f; // 이동 속도 (10m/s)\n    private Rigidbody rb;\n\n    void Start()\n    {\n        rb = GetComponent<Rigidbody>();\n        if (rb == null)\n        {\n            Debug.LogError(\"Rigidbody component not found!\");\n        }\n    }\n\n    void FixedUpdate()\n    {\n        if (rb != null)\n        {\n            rb.MovePosition(rb.position + transform.forward * speed * Time.fixedDeltaTime);\n        }\n    }\n}\n```\n\n`FixedUpdate()` 함수를 사용하는 이유는 물리 엔진 업데이트와 동기화하기 위해서입니다.  `Time.fixedDeltaTime`을 사용해야 합니다.  Rigidbody 컴포넌트가 필요하며,  컴포넌트가 없는 경우 에러 메시지를 출력합니다.\n\n\n**방법 3:  특정 지점으로 이동 (10미터 앞의 위치 계산)**\n\n이 방법은 현재 위치에서 10미터 앞의 위치를 계산하여 해당 위치로 순간 이동하거나,  해당 위치를 목표로 이동합니다.\n\n```C#\nusing UnityEngine;\n\npublic class MoveToPosition : MonoBehaviour\n{\n    public float distance = 10f;\n\n    void Start()\n    {\n        Vector3 targetPosition = transform.position + transform.forward * distance;\n        transform.position = targetPosition; // 순간 이동\n    }\n}\n```\n\n이 코드는 `Start()` 함수에서 현재 위치에 `transform.forward * distance`를 더하여 10미터 앞의 위치를 계산하고, `transform.position`을 변경하여 순간 이동합니다.  점진적으로 이동하려면 코루틴이나 다른 방법을 사용해야 합니다.  예를 들어, Lerp 함수를 사용하여 부드럽게 이동할 수 있습니다.\n\n\n어떤 방법을 선택할지는 게임의 상황에 따라 다릅니다.  간단한 이동에는 방법 1, 물리적 상호 작용이 필요한 경우 방법 2, 특정 지점으로의 순간 이동이나 목표 지점 설정에는 방법 3을 사용하는 것이 적절합니다.  코드를 사용하기 전에 게임 오브젝트에 필요한 컴포넌트(Rigidbody)가 있는지 확인하세요.\n",
             "ServiceType": 0,
             "Memos": [],
             "IsImportant": false
         },
         {
-            "Question": "ㄴㅁㅁㄴㄴ",
-            "Answer": "That's a sequence of Korean consonants.  Without more context, it's impossible to know what it means.  It could be:\n\n* **Part of a word:**  Korean words are often a combination of consonants and vowels.  This is only consonants, so it's incomplete.\n* **An abbreviation:**  It might be a shortened form of something.\n* **A random sequence:** It could simply be a random collection of letters.\n* **A code:**  It could be part of a secret code or cipher.\n\nTo understand the meaning, I need more information.\n",
-            "ServiceType": 0,
-            "Memos": [
-                {
-                    "Content": "ㅈㅈㅁㅇㅈㅇㅈㅇㅈ",
-                    "Type": 5
-                },
-                {
-                    "Content": "ㄴㅁㅁㄴㅁ",
-                    "Type": 5
-                },
-                {
-                    "Content": "ㄴㅁㄴㅁ",
-                    "Type": 5
-                },
-                {
-                    "Content": "ㅁㄴㅇ",
-                    "Type": 5
-                }
-            ],
-            "IsImportant": false
-        },
-        {
-            "Question": "ㄴㅋㅊㅊ",
-            "Answer": "That looks like a Korean text abbreviation.  Without more context, it's impossible to say for sure what it means.  It's likely slang or an abbreviation used in online chats.  To understand its meaning, I need more information.\n",
+            "Question": "안녕하세요?\n",
+            "Answer": "안녕하세요!\n",
             "ServiceType": 0,
             "Memos": [],
             "IsImportant": false
