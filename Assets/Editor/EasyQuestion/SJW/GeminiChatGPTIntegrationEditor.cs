@@ -58,19 +58,17 @@ public class GeminiChatGPTIntegrationEditor : EditorWindow
         }
         else
         {
-            Debug.LogWarning("GeminiChatGPTIntegrationEditor.cs 스크립트를 찾을 수 없습니다. 배너 이미지 로드 실패.");
+            Debug.LogWarning("GeminiChatGPTIntegrationEditor.cs 스크립트를 찾을 수 없습니다. 배너 이미지를 로드할 수 없습니다.");
         }
     }
 
     void OnGUI()
     {
+        float bannerWidth = position.width;
+        float bannerHeight = 100; 
+
         if (_bannerImage != null)
         {
-            float bannerWidth = position.width * 0.9f;
-            float bannerHeight = bannerWidth / _bannerImage.width * _bannerImage.height;
-            if (bannerHeight > 150) bannerHeight = 150; // 최대 높이 제한
-            if (bannerWidth > 1000) bannerWidth = 1000; // 최대 너비 제한
-
             GUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace();
             GUILayout.Label(_bannerImage, GUILayout.Width(bannerWidth), GUILayout.Height(bannerHeight));
@@ -117,13 +115,14 @@ public class GeminiChatGPTIntegrationEditor : EditorWindow
         return _statisticsTabHandler;
     }
 
-    public ChatGPTTabHandler GetChatGPTTabHandler()
-    {
-        return _chatGPTTabHandler;
-    }
-
+    // New Public Getters for AI Handlers
     public GeminiTabHandler GetGeminiTabHandler()
     {
         return _geminiTabHandler;
+    }
+
+    public ChatGPTTabHandler GetChatGPTTabHandler()
+    {
+        return _chatGPTTabHandler;
     }
 }

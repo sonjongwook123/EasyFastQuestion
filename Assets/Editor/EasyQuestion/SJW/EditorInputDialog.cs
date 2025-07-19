@@ -21,8 +21,6 @@ public class EditorInputDialog : EditorWindow
         _window.maxSize = new Vector2(300, 100);
         _window.ShowModalUtility();
         
-        // Window.ShowModalUtility()가 블록킹되지 않으므로 수동으로 대기
-        // OnDestroy에서 minSize를 변경하여 루프를 종료합니다.
         while (_window != null && _window.minSize.x != -1)
         {
             System.Threading.Thread.Sleep(50);
@@ -62,10 +60,9 @@ public class EditorInputDialog : EditorWindow
 
     private void OnDestroy()
     {
-        // 창이 닫힐 때 대기 루프를 종료하도록 minSize를 변경합니다.
         if (_window != null)
         {
-            _window.minSize = new Vector2(-1, -1); // 루프 종료 조건 변경
+            _window.minSize = new Vector2(-1, -1);
         }
     }
 }

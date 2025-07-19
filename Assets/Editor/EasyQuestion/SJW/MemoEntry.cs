@@ -14,7 +14,7 @@ public class MemoEntry
     }
     
     public string Content;
-    public MessageType Type; // 'Type' 필드는 MemoEntry 인스턴스의 멤버입니다.
+    public MessageType Type; 
     public DateTime Timestamp;
 
     public MemoEntry(string content, MessageType type, DateTime timestamp)

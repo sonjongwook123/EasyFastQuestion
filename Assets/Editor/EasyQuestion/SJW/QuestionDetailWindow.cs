@@ -12,9 +12,9 @@ public class QuestionDetailWindow : EditorWindow
     private GeminiChatGPTIntegrationEditor _parentEditorWindow;
 
     private Vector2 _memoScrollPos;
-    private Vector2 _chatHistoryScrollPos; // New scroll position for chat history
+    private Vector2 _chatHistoryScrollPos;
     private string _newMemoText = "";
-    private string _chatHistoryText = ""; // New field for combined chat history
+    private string _chatHistoryText = ""; 
 
     private const int MemosPerPage = 3;
     private int _currentMemoPage = 0;
@@ -26,7 +26,7 @@ public class QuestionDetailWindow : EditorWindow
         window._questionListHandler = handler;
         window._parentEditorWindow = parentEditor;
         window._currentMemoPage = 0;
-        window.UpdateChatHistoryText(); // Initialize chat history text
+        window.UpdateChatHistoryText(); 
         window.ShowUtility();
         window.Focus();
     }
